@@ -414,6 +414,7 @@
         <div class="btn-row">
           <button id="saveBtn" type="submit">저장</button>
           <button id="downloadCsvBtn" class="btn-secondary" type="button">CSV 다운로드</button>
+          <button id="downloadPhotosZipBtn" class="btn-secondary" type="button">사진 ZIP 다운로드</button>
         </div>
       </form>
 
@@ -442,13 +443,11 @@
   </main>
 
   <script src="https://openapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=738lerut3t"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script>
     // localStorage에 저장할 때 사용할 고정 키
     const STORAGE_KEY = "barrierFreeMapData";
-    const SUPABASE_TABLE = "barrier_entries";
-    const SUPABASE_BUCKET = "barrier-images";
-    const SUPABASE_URL = "https://ghdcjmmxfeaedsspterz.supabase.co";
-    const SUPABASE_ANON_KEY = "sb_publishable_lvBfmbpcNmM4MJvu-lqIBQ_j2K1BHgM";
+    const ROW_ID_SEQ_KEY = "barrierFreeRowSeq";
 
     // CSV 컬럼은 현재 한국어 입력 항목 중심으로 구성
     const CSV_COLUMNS = [
@@ -473,7 +472,6 @@
     let collectedRows = [];
     let selectedRowIds = new Set();
     let editingRowId = null;
-    const supabaseConfig = { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY };
 
     const elements = {
       permissionModal: document.getElementById("permissionModal"),
@@ -524,6 +522,13 @@
     function saveToStorage() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(collectedRows));
       elements.dataCount.textContent = String(collectedRows.length);
+    }
+
+    function nextRowId() {
+      const current = Number(localStorage.getItem(ROW_ID_SEQ_KEY) || "0");
+      const next = current + 1;
+      localStorage.setItem(ROW_ID_SEQ_KEY, String(next));
+      return next;
     }
 
     function getCurrentDataRows() {
@@ -610,101 +615,62 @@
       return [header, ...body].join("\n");
     }
 
-    async function supabaseRequest(path, options = {}) {
-      if (!supabaseConfig || !supabaseConfig.url || !supabaseConfig.anonKey) {
-        throw new Error("Supabase 연결 정보가 없습니다.");
-      }
-      const response = await fetch(`${supabaseConfig.url}/rest/v1/${path}`, {
-        ...options,
-        headers: {
-          "Content-Type": "application/json",
-          apikey: supabaseConfig.anonKey,
-          Authorization: `Bearer ${supabaseConfig.anonKey}`,
-          ...(options.headers || {})
-        }
+    async function fileToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error("이미지 읽기에 실패했습니다."));
+        reader.readAsDataURL(file);
       });
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`Supabase 오류: ${response.status} ${text}`);
-      }
-      if (response.status === 204) {
-        return null;
-      }
-      return response.json();
     }
 
-    async function fetchSharedData() {
-      const rows = await supabaseRequest(
-        `${SUPABASE_TABLE}?select=id,data,created_at&order=created_at.asc`,
-        { method: "GET" }
-      );
-      collectedRows = Array.isArray(rows) ? rows.filter((row) => row && row.data) : [];
-      selectedRowIds.clear();
-      saveToStorage();
-      renderSavedMarkers();
-      renderDataList();
-    }
-
-    async function uploadImagesToStorage(files) {
-      const uploaded = [];
+    async function convertFilesForStorage(files) {
+      const converted = [];
       for (const file of files) {
-        const safeName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${file.name}`.replace(/\s+/g, "_");
-        const objectPath = `barrier/${safeName}`;
-        const response = await fetch(
-          `${supabaseConfig.url}/storage/v1/object/${SUPABASE_BUCKET}/${encodeURIComponent(objectPath)}`,
-          {
-            method: "POST",
-            headers: {
-              apikey: supabaseConfig.anonKey,
-              Authorization: `Bearer ${supabaseConfig.anonKey}`,
-              "x-upsert": "true",
-              "Content-Type": file.type || "application/octet-stream"
-            },
-            body: file
-          }
-        );
-        if (!response.ok) {
-          const text = await response.text();
-          throw new Error(`이미지 업로드 실패: ${response.status} ${text}`);
-        }
-        uploaded.push({
+        const dataUrl = await fileToDataUrl(file);
+        converted.push({
           name: file.name,
-          path: objectPath,
-          url: `${supabaseConfig.url}/storage/v1/object/public/${SUPABASE_BUCKET}/${objectPath}`
+          type: file.type || "image/jpeg",
+          dataUrl: dataUrl
         });
       }
-      return uploaded;
+      return converted;
     }
 
-    async function deleteImagesFromStorage(imageFiles = []) {
-      for (const image of imageFiles) {
-        if (!image.path) continue;
-        await fetch(`${supabaseConfig.url}/storage/v1/object/${SUPABASE_BUCKET}/${encodeURIComponent(image.path)}`, {
-          method: "DELETE",
-          headers: {
-            apikey: supabaseConfig.anonKey,
-            Authorization: `Bearer ${supabaseConfig.anonKey}`
-          }
-        });
+    async function saveEditedRow(rowId, updatedData) {
+      collectedRows = collectedRows.map((row) => (row.id === rowId ? { ...row, data: updatedData } : row));
+      saveToStorage();
+    }
+
+    async function downloadPhotosZip() {
+      const allImages = collectedRows.flatMap((row) => row.data?.imageFiles || []);
+      if (allImages.length === 0) {
+        showMessage("ZIP으로 받을 사진이 없습니다.", true);
+        return;
       }
-    }
-
-    async function saveSharedData(payload) {
-      const inserted = await supabaseRequest(SUPABASE_TABLE, {
-        method: "POST",
-        headers: {
-          Prefer: "return=representation"
-        },
-        body: JSON.stringify([{ data: payload }])
+      if (!window.JSZip) {
+        showMessage("ZIP 라이브러리를 불러오지 못했습니다.", true);
+        return;
+      }
+      const zip = new JSZip();
+      const imageFolder = zip.folder("images");
+      allImages.forEach((image, index) => {
+        if (!image?.dataUrl) return;
+        const base64 = image.dataUrl.split(",")[1];
+        if (!base64) return;
+        const filename = image.name || `photo_${index + 1}.jpg`;
+        imageFolder.file(filename, base64, { base64: true });
       });
-      return Array.isArray(inserted) ? inserted[0] : null;
-    }
-
-    async function deleteSharedRowsByIds(ids) {
-      if (!ids.length) return;
-      await supabaseRequest(`${SUPABASE_TABLE}?id=in.(${ids.join(",")})`, {
-        method: "DELETE"
-      });
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `barrier_free_photos_${Date.now()}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showMessage("사진 ZIP 다운로드를 시작했습니다.");
     }
 
     function downloadCsv() {
@@ -817,14 +783,6 @@
       if (overviewMap) {
         overviewMap.setCenter(new naver.maps.LatLng(lat, lng));
       }
-    }
-
-    async function saveEditedRow(rowId, updatedData) {
-      await supabaseRequest(`${SUPABASE_TABLE}?id=eq.${rowId}`, {
-        method: "PATCH",
-        headers: { Prefer: "return=representation" },
-        body: JSON.stringify({ data: updatedData })
-      });
     }
 
     function renderDataList() {
@@ -992,7 +950,7 @@
             const targetRow = collectedRows.find((row) => row.id === editingRowId);
             const existingImageFiles = targetRow?.data?.imageFiles || [];
             if (files.length > 0) {
-              const appendedFiles = await uploadImagesToStorage(files);
+              const appendedFiles = await convertFilesForStorage(files);
               payload.imageFiles = [...existingImageFiles, ...appendedFiles];
               payload.imageNames = payload.imageFiles.map((file) => file.name);
             } else {
@@ -1010,26 +968,27 @@
           }
 
           if (files.length > 0) {
-            payload.imageFiles = await uploadImagesToStorage(files);
+            payload.imageFiles = await convertFilesForStorage(files);
             payload.imageNames = payload.imageFiles.map((file) => file.name);
           }
-          const inserted = await saveSharedData(payload);
-          if (inserted && inserted.id) {
-            collectedRows.push(inserted);
-          } else {
-            await fetchSharedData();
-          }
+          const inserted = {
+            id: nextRowId(),
+            data: payload,
+            created_at: new Date().toISOString()
+          };
+          collectedRows.push(inserted);
           saveToStorage();
           renderSavedMarkers();
           renderDataList();
           resetFormKeepLocation();
-          showMessage("공유 저장소에 저장했습니다.");
+          showMessage("데이터를 저장했습니다.");
         } catch (error) {
           showMessage(error.message || "저장 중 오류가 발생했습니다.", true);
         }
       });
 
       document.getElementById("downloadCsvBtn").addEventListener("click", downloadCsv);
+      document.getElementById("downloadPhotosZipBtn").addEventListener("click", downloadPhotosZip);
 
       elements.selectAllRows.addEventListener("change", () => {
         if (elements.selectAllRows.checked) {
@@ -1077,11 +1036,6 @@
           return;
         }
         try {
-          const imageFilesToDelete = collectedRows
-            .filter((row) => selectedRowIds.has(row.id))
-            .flatMap((row) => row.data.imageFiles || []);
-          await deleteSharedRowsByIds(ids);
-          await deleteImagesFromStorage(imageFilesToDelete);
           collectedRows = collectedRows.filter((row) => !selectedRowIds.has(row.id));
           selectedRowIds.clear();
           saveToStorage();
@@ -1098,9 +1052,7 @@
     renderDataList();
     initializeEvents();
     setFormModeEditing(false);
-    fetchSharedData().catch(() => {
-      showMessage("공유 데이터 동기화에 실패했습니다. Supabase 설정을 확인해주세요.", true);
-    });
+    showMessage("로컬 모드로 실행 중입니다. CSV/사진 ZIP 다운로드를 사용할 수 있습니다.");
   </script>
 </body>
 </html>
