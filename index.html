@@ -477,12 +477,19 @@
             <label class="check-item"><input type="checkbox" id="braille_available" />3. 건물 내 강의실 점자표기 여부</label>
             <label class="check-item"><input type="checkbox" id="toilet_available" />4. 장애인 화장실</label>
             <label class="check-item"><input type="checkbox" id="ramp_available" />5. 경사로</label>
+            <label class="check-item"><input type="checkbox" id="auto_door_available" />자동문 여부</label>
+            <label class="check-item"><input type="checkbox" id="threshold_present" />문턱 유무</label>
           </div>
         </div>
 
         <div>
           <label for="parking_capacity">5. 장애인 전용 주차장 몇 대</label>
           <input id="parking_capacity" type="number" min="0" step="1" placeholder="예: 3" />
+        </div>
+
+        <div>
+          <label for="parking_distance_entrance_m">주차장에서 입구까지 거리(대략 m)</label>
+          <input id="parking_distance_entrance_m" type="number" min="0" step="1" placeholder="예: 25" />
         </div>
 
         <div>
@@ -550,7 +557,10 @@
       "elevator_available",
       "braille_available",
       "toilet_available",
+      "auto_door_available",
+      "threshold_present",
       "parking_capacity",
+      "parking_distance_entrance_m",
       "ramp_available",
       "description",
       "imageNames"
@@ -669,7 +679,10 @@
         elevator_available: document.getElementById("elevator_available").checked,
         braille_available: document.getElementById("braille_available").checked,
         toilet_available: document.getElementById("toilet_available").checked,
+        auto_door_available: document.getElementById("auto_door_available").checked,
+        threshold_present: document.getElementById("threshold_present").checked,
         parking_capacity: parseNumberOrDefault(document.getElementById("parking_capacity").value, 0),
+        parking_distance_entrance_m: parseNumberOrDefault(document.getElementById("parking_distance_entrance_m").value, 0),
         ramp_available: document.getElementById("ramp_available").checked,
         description: document.getElementById("description").value.trim(),
         imageNames: Array.from(files).map((file) => file.name),
@@ -688,7 +701,10 @@
       document.getElementById("braille_available").checked = !!data.braille_available;
       document.getElementById("toilet_available").checked = !!data.toilet_available;
       document.getElementById("ramp_available").checked = !!data.ramp_available;
+      document.getElementById("auto_door_available").checked = !!data.auto_door_available;
+      document.getElementById("threshold_present").checked = !!data.threshold_present;
       document.getElementById("parking_capacity").value = data.parking_capacity ?? 0;
+      document.getElementById("parking_distance_entrance_m").value = data.parking_distance_entrance_m ?? 0;
       document.getElementById("description").value = data.description || "";
       if (typeof data.lat === "number" && typeof data.lng === "number") {
         moveMarker(data.lat, data.lng);
@@ -1081,7 +1097,8 @@
           </div>
           <div class="row-meta">
             좌표: ${item.lat?.toFixed ? item.lat.toFixed(6) : item.lat}, ${item.lng?.toFixed ? item.lng.toFixed(6) : item.lng}<br/>
-            주차장: ${item.parking_capacity ?? 0}대 / 경사로: ${item.ramp_available ? "있음" : "없음"} / 사진: ${(item.imageNames || []).length}장<br/>
+            주차장: ${item.parking_capacity ?? 0}대 / 입구까지 거리: ${item.parking_distance_entrance_m ?? 0}m / 경사로: ${item.ramp_available ? "있음" : "없음"}<br/>
+            자동문: ${item.auto_door_available ? "있음" : "없음"} / 문턱: ${item.threshold_present ? "있음" : "없음"} / 사진: ${(item.imageNames || []).length}장<br/>
             저장시각: ${created}
           </div>
         `;
