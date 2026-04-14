@@ -447,7 +447,9 @@
   <script>
     // localStorage에 저장할 때 사용할 고정 키
     const STORAGE_KEY = "barrierFreeMapData";
-    const ROW_ID_SEQ_KEY = "barrierFreeRowSeq";
+    const SUPABASE_TABLE = "barrier_entries";
+    const SUPABASE_URL = "https://ghdcjmmxfeaedsspterz.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_lvBfmbpcNmM4MJvu-lqIBQ_j2K1BHgM";
 
     // CSV 컬럼은 현재 한국어 입력 항목 중심으로 구성
     const CSV_COLUMNS = [
@@ -522,13 +524,6 @@
     function saveToStorage() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(collectedRows));
       elements.dataCount.textContent = String(collectedRows.length);
-    }
-
-    function nextRowId() {
-      const current = Number(localStorage.getItem(ROW_ID_SEQ_KEY) || "0");
-      const next = current + 1;
-      localStorage.setItem(ROW_ID_SEQ_KEY, String(next));
-      return next;
     }
 
     function getCurrentDataRows() {
@@ -638,8 +633,54 @@
     }
 
     async function saveEditedRow(rowId, updatedData) {
+      await supabaseRequest(`${SUPABASE_TABLE}?id=eq.${rowId}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({ data: updatedData })
+      });
       collectedRows = collectedRows.map((row) => (row.id === rowId ? { ...row, data: updatedData } : row));
       saveToStorage();
+    }
+
+    async function supabaseRequest(path, options = {}) {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          ...(options.headers || {})
+        }
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`공유 저장소 오류: ${response.status} ${text}`);
+      }
+      if (response.status === 204) return null;
+      return response.json();
+    }
+
+    async function fetchSharedData() {
+      const rows = await supabaseRequest(`${SUPABASE_TABLE}?select=id,data,created_at&order=created_at.asc`, { method: "GET" });
+      collectedRows = Array.isArray(rows) ? rows.filter((row) => row && row.data) : [];
+      selectedRowIds.clear();
+      saveToStorage();
+      renderSavedMarkers();
+      renderDataList();
+    }
+
+    async function insertSharedRow(payload) {
+      const rows = await supabaseRequest(SUPABASE_TABLE, {
+        method: "POST",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify([{ data: payload }])
+      });
+      return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+    }
+
+    async function deleteSharedRows(ids) {
+      if (!ids.length) return;
+      await supabaseRequest(`${SUPABASE_TABLE}?id=in.(${ids.join(",")})`, { method: "DELETE" });
     }
 
     async function downloadPhotosZip() {
@@ -971,17 +1012,17 @@
             payload.imageFiles = await convertFilesForStorage(files);
             payload.imageNames = payload.imageFiles.map((file) => file.name);
           }
-          const inserted = {
-            id: nextRowId(),
-            data: payload,
-            created_at: new Date().toISOString()
-          };
-          collectedRows.push(inserted);
-          saveToStorage();
-          renderSavedMarkers();
-          renderDataList();
+          const inserted = await insertSharedRow(payload);
+          if (inserted && inserted.id) {
+            collectedRows.push(inserted);
+            saveToStorage();
+            renderSavedMarkers();
+            renderDataList();
+          } else {
+            await fetchSharedData();
+          }
           resetFormKeepLocation();
-          showMessage("데이터를 저장했습니다.");
+          showMessage("데이터를 공유 저장소에 저장했습니다.");
         } catch (error) {
           showMessage(error.message || "저장 중 오류가 발생했습니다.", true);
         }
@@ -1036,12 +1077,13 @@
           return;
         }
         try {
+          await deleteSharedRows(ids);
           collectedRows = collectedRows.filter((row) => !selectedRowIds.has(row.id));
           selectedRowIds.clear();
           saveToStorage();
           renderSavedMarkers();
           renderDataList();
-          showMessage("선택한 데이터를 삭제했습니다.");
+          showMessage("선택한 데이터를 공유 저장소에서 삭제했습니다.");
         } catch (error) {
           showMessage(error.message || "삭제 중 오류가 발생했습니다.", true);
         }
@@ -1052,7 +1094,13 @@
     renderDataList();
     initializeEvents();
     setFormModeEditing(false);
-    showMessage("로컬 모드로 실행 중입니다. CSV/사진 ZIP 다운로드를 사용할 수 있습니다.");
+    fetchSharedData()
+      .then(() => {
+        showMessage("공유 모드로 실행 중입니다. 기기 간 데이터가 동기화됩니다.");
+      })
+      .catch((error) => {
+        showMessage(error.message || "공유 데이터 동기화에 실패했습니다.", true);
+      });
   </script>
 </body>
 </html>
