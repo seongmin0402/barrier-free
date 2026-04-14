@@ -269,7 +269,7 @@
 
     <section class="card">
       <h1 class="title">베리어프리 지도 데이터 수집</h1>
-      <p class="desc">지도에서 위치를 탭하면 선택 좌표가 바뀝니다. 현재 좌표 기준으로 시설 정보를 입력하세요.</p>
+      <p class="desc">지도에서 위치를 탭하면 선택 좌표가 바뀝니다. 아래 한국어 항목으로 접근성 정보를 입력하세요.</p>
       <div id="map"></div>
       <p class="small-hint">OpenStreetMap + Leaflet.js</p>
     </section>
@@ -282,58 +282,24 @@
         </div>
 
         <div>
-          <label for="type">시설 유형</label>
-          <select id="type" required>
-            <option value="">선택하세요</option>
-            <option value="ramp">ramp</option>
-            <option value="stairs">stairs</option>
-            <option value="elevator">elevator</option>
-            <option value="toilet">toilet</option>
-            <option value="parking">parking</option>
-            <option value="transport">transport</option>
-          </select>
-        </div>
-
-        <div>
-          <label>접근성 데이터</label>
+          <label>접근성 체크 항목</label>
           <div class="check-grid">
-            <label class="check-item"><input type="checkbox" id="wheelchair_access" />wheelchair_access</label>
-            <label class="check-item"><input type="checkbox" id="elevator_available" />elevator_available</label>
-            <label class="check-item"><input type="checkbox" id="braille_available" />braille_available</label>
-            <label class="check-item"><input type="checkbox" id="toilet_available" />toilet_available</label>
-            <label class="check-item"><input type="checkbox" id="parking_available" />parking_available</label>
-            <label class="check-item"><input type="checkbox" id="ramp_available" />ramp_available</label>
+            <label class="check-item"><input type="checkbox" id="wheelchair_access" />1. 휠체어 진입 가능여부</label>
+            <label class="check-item"><input type="checkbox" id="elevator_available" />2. 장애인 승강기</label>
+            <label class="check-item"><input type="checkbox" id="braille_available" />3. 건물 내 강의실 점자표기 여부</label>
+            <label class="check-item"><input type="checkbox" id="toilet_available" />4. 장애인 화장실</label>
+            <label class="check-item"><input type="checkbox" id="ramp_available" />6. 경사로</label>
           </div>
         </div>
 
         <div>
-          <label for="parking_capacity">parking_capacity (숫자)</label>
-          <input id="parking_capacity" type="number" min="0" step="1" placeholder="예: 10" />
+          <label for="parking_capacity">5. 장애인 전용 주차장 몇 대</label>
+          <input id="parking_capacity" type="number" min="0" step="1" placeholder="예: 3" />
         </div>
 
         <div>
-          <label for="parking_distance">parking_distance (m)</label>
-          <input id="parking_distance" type="number" min="0" step="1" placeholder="예: 25" />
-        </div>
-
-        <div>
-          <label for="slope">slope (경사도)</label>
-          <input id="slope" type="number" step="0.1" placeholder="예: 4.5" />
-        </div>
-
-        <div>
-          <label for="width">width (cm)</label>
-          <input id="width" type="number" min="0" step="0.1" placeholder="예: 120" />
-        </div>
-
-        <div>
-          <label for="transport_info">transport_info</label>
-          <input id="transport_info" type="text" placeholder="예: 버스 정류장 100m 이내" />
-        </div>
-
-        <div>
-          <label for="description">description</label>
-          <textarea id="description" placeholder="추가 설명을 입력하세요"></textarea>
+          <label for="description">7. 기타 정보</label>
+          <textarea id="description" placeholder="예: 출입구 경사로는 있으나 폭이 좁음"></textarea>
         </div>
 
         <div class="btn-row">
@@ -357,22 +323,16 @@
     // localStorage에 저장할 때 사용할 고정 키
     const STORAGE_KEY = "barrierFreeMapData";
 
-    // CSV의 컬럼 순서를 요구사항과 동일하게 고정
+    // CSV 컬럼은 현재 한국어 입력 항목 중심으로 구성
     const CSV_COLUMNS = [
       "lat",
       "lng",
-      "type",
       "wheelchair_access",
       "elevator_available",
       "braille_available",
       "toilet_available",
-      "parking_available",
       "parking_capacity",
-      "parking_distance",
       "ramp_available",
-      "slope",
-      "width",
-      "transport_info",
       "description",
       "imageNames"
     ];
@@ -435,41 +395,23 @@
       return Number.isNaN(parsed) ? defaultValue : parsed;
     }
 
-    function parseNumberOrNull(value) {
-      if (value === "" || value === null || value === undefined) {
-        return null;
-      }
-      const parsed = Number(value);
-      return Number.isNaN(parsed) ? null : parsed;
-    }
-
     function createDataObject() {
       const files = document.getElementById("images").files;
-      const type = document.getElementById("type").value;
 
-      // 위치 및 시설 유형은 저장 전 필수 검증
+      // 위치는 저장 전 필수 검증
       if (selectedLat === null || selectedLng === null) {
         throw new Error("유효한 좌표가 없습니다. 위치 권한을 다시 확인하세요.");
-      }
-      if (!type) {
-        throw new Error("시설 유형(type)을 선택해주세요.");
       }
 
       return {
         lat: selectedLat,
         lng: selectedLng,
-        type: type,
         wheelchair_access: document.getElementById("wheelchair_access").checked,
         elevator_available: document.getElementById("elevator_available").checked,
         braille_available: document.getElementById("braille_available").checked,
         toilet_available: document.getElementById("toilet_available").checked,
-        parking_available: document.getElementById("parking_available").checked,
         parking_capacity: parseNumberOrDefault(document.getElementById("parking_capacity").value, 0),
-        parking_distance: parseNumberOrDefault(document.getElementById("parking_distance").value, 0),
         ramp_available: document.getElementById("ramp_available").checked,
-        slope: parseNumberOrNull(document.getElementById("slope").value),
-        width: parseNumberOrNull(document.getElementById("width").value),
-        transport_info: document.getElementById("transport_info").value.trim(),
         description: document.getElementById("description").value.trim(),
         imageNames: Array.from(files).map((file) => file.name)
       };
