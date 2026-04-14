@@ -305,6 +305,34 @@
       border: 2px solid #fff;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
     }
+    .data-row {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+      background: #fcfcfd;
+    }
+    .data-row-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .data-row-title {
+      font-weight: 700;
+      flex: 1;
+      font-size: 0.95rem;
+    }
+    .mini-btn {
+      width: auto;
+      padding: 8px 10px;
+      font-size: 0.86rem;
+      border-radius: 8px;
+    }
+    .row-meta {
+      font-size: 0.86rem;
+      color: var(--subtle);
+      line-height: 1.4;
+    }
 
     @media (max-width: 480px) {
       .app {
@@ -386,7 +414,6 @@
         <div class="btn-row">
           <button id="saveBtn" type="submit">저장</button>
           <button id="downloadCsvBtn" class="btn-secondary" type="button">CSV 다운로드</button>
-          <button id="clearAllBtn" class="btn-danger" type="button">초기화 (전체 삭제)</button>
         </div>
       </form>
 
@@ -400,6 +427,18 @@
       <div id="overviewMap"></div>
       <p class="small-hint">표시된 마커 수: <span id="markerCount">0</span></p>
     </section>
+
+    <section class="card">
+      <h2 class="title">누적 데이터 목록</h2>
+      <div class="check-item" style="margin-bottom:10px;">
+        <input type="checkbox" id="selectAllRows" />
+        <span>전체 선택</span>
+      </div>
+      <div id="dataList" class="form-grid"></div>
+      <div class="btn-row" style="margin-top:12px;">
+        <button id="deleteSelectedBtn" class="btn-danger" type="button">선택 데이터 삭제</button>
+      </div>
+    </section>
   </main>
 
   <script src="https://openapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=738lerut3t"></script>
@@ -407,6 +446,7 @@
     // localStorage에 저장할 때 사용할 고정 키
     const STORAGE_KEY = "barrierFreeMapData";
     const SUPABASE_TABLE = "barrier_entries";
+    const SUPABASE_BUCKET = "barrier-images";
     const SUPABASE_URL = "https://ghdcjmmxfeaedsspterz.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_lvBfmbpcNmM4MJvu-lqIBQ_j2K1BHgM";
 
@@ -430,7 +470,9 @@
     let savedMarkers = [];
     let selectedLat = null;
     let selectedLng = null;
-    let collectedData = [];
+    let collectedRows = [];
+    let selectedRowIds = new Set();
+    let editingRowId = null;
     const supabaseConfig = { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY };
 
     const elements = {
@@ -444,6 +486,9 @@
       dataCount: document.getElementById("dataCount"),
       message: document.getElementById("message"),
       markerCount: document.getElementById("markerCount"),
+      dataList: document.getElementById("dataList"),
+      selectAllRows: document.getElementById("selectAllRows"),
+      deleteSelectedBtn: document.getElementById("deleteSelectedBtn"),
       btnNormal: document.getElementById("btnNormal"),
       btnSatellite: document.getElementById("btnSatellite"),
       locateMeBtn: document.getElementById("locateMeBtn")
@@ -465,20 +510,24 @@
     function loadStoredData() {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
-        collectedData = raw ? JSON.parse(raw) : [];
-        if (!Array.isArray(collectedData)) {
-          collectedData = [];
+        collectedRows = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(collectedRows)) {
+          collectedRows = [];
         }
       } catch (error) {
-        collectedData = [];
+        collectedRows = [];
         showMessage("저장된 데이터를 읽는 중 오류가 발생했습니다.", true);
       }
-      elements.dataCount.textContent = String(collectedData.length);
+      elements.dataCount.textContent = String(collectedRows.length);
     }
 
     function saveToStorage() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(collectedData));
-      elements.dataCount.textContent = String(collectedData.length);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(collectedRows));
+      elements.dataCount.textContent = String(collectedRows.length);
+    }
+
+    function getCurrentDataRows() {
+      return collectedRows.map((row) => row.data);
     }
 
     function getMarkerPixelSize() {
@@ -522,8 +571,29 @@
         parking_capacity: parseNumberOrDefault(document.getElementById("parking_capacity").value, 0),
         ramp_available: document.getElementById("ramp_available").checked,
         description: document.getElementById("description").value.trim(),
-        imageNames: Array.from(files).map((file) => file.name)
+        imageNames: Array.from(files).map((file) => file.name),
+        imageFiles: []
       };
+    }
+
+    function setFormModeEditing(isEditing) {
+      const saveBtn = document.getElementById("saveBtn");
+      saveBtn.textContent = isEditing ? "수정 저장" : "저장";
+    }
+
+    function fillFormFromData(data) {
+      document.getElementById("wheelchair_access").checked = !!data.wheelchair_access;
+      document.getElementById("elevator_available").checked = !!data.elevator_available;
+      document.getElementById("braille_available").checked = !!data.braille_available;
+      document.getElementById("toilet_available").checked = !!data.toilet_available;
+      document.getElementById("ramp_available").checked = !!data.ramp_available;
+      document.getElementById("parking_capacity").value = data.parking_capacity ?? 0;
+      document.getElementById("description").value = data.description || "";
+      if (typeof data.lat === "number" && typeof data.lng === "number") {
+        moveMarker(data.lat, data.lng);
+        if (map) map.setCenter(new naver.maps.LatLng(data.lat, data.lng));
+      }
+      setFormModeEditing(true);
     }
 
     function csvEscape(value) {
@@ -568,33 +638,82 @@
         `${SUPABASE_TABLE}?select=id,data,created_at&order=created_at.asc`,
         { method: "GET" }
       );
-      collectedData = Array.isArray(rows) ? rows.map((row) => row.data).filter(Boolean) : [];
+      collectedRows = Array.isArray(rows) ? rows.filter((row) => row && row.data) : [];
+      selectedRowIds.clear();
       saveToStorage();
       renderSavedMarkers();
+      renderDataList();
+    }
+
+    async function uploadImagesToStorage(files) {
+      const uploaded = [];
+      for (const file of files) {
+        const safeName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${file.name}`.replace(/\s+/g, "_");
+        const objectPath = `barrier/${safeName}`;
+        const response = await fetch(
+          `${supabaseConfig.url}/storage/v1/object/${SUPABASE_BUCKET}/${encodeURIComponent(objectPath)}`,
+          {
+            method: "POST",
+            headers: {
+              apikey: supabaseConfig.anonKey,
+              Authorization: `Bearer ${supabaseConfig.anonKey}`,
+              "x-upsert": "true",
+              "Content-Type": file.type || "application/octet-stream"
+            },
+            body: file
+          }
+        );
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`이미지 업로드 실패: ${response.status} ${text}`);
+        }
+        uploaded.push({
+          name: file.name,
+          path: objectPath,
+          url: `${supabaseConfig.url}/storage/v1/object/public/${SUPABASE_BUCKET}/${objectPath}`
+        });
+      }
+      return uploaded;
+    }
+
+    async function deleteImagesFromStorage(imageFiles = []) {
+      for (const image of imageFiles) {
+        if (!image.path) continue;
+        await fetch(`${supabaseConfig.url}/storage/v1/object/${SUPABASE_BUCKET}/${encodeURIComponent(image.path)}`, {
+          method: "DELETE",
+          headers: {
+            apikey: supabaseConfig.anonKey,
+            Authorization: `Bearer ${supabaseConfig.anonKey}`
+          }
+        });
+      }
     }
 
     async function saveSharedData(payload) {
-      await supabaseRequest(SUPABASE_TABLE, {
+      const inserted = await supabaseRequest(SUPABASE_TABLE, {
         method: "POST",
         headers: {
           Prefer: "return=representation"
         },
         body: JSON.stringify([{ data: payload }])
       });
+      return Array.isArray(inserted) ? inserted[0] : null;
     }
 
-    async function clearSharedData() {
-      await supabaseRequest(`${SUPABASE_TABLE}?id=gt.0`, {
+    async function deleteSharedRowsByIds(ids) {
+      if (!ids.length) return;
+      await supabaseRequest(`${SUPABASE_TABLE}?id=in.(${ids.join(",")})`, {
         method: "DELETE"
       });
     }
 
     function downloadCsv() {
-      if (collectedData.length === 0) {
+      const rows = getCurrentDataRows();
+      if (rows.length === 0) {
         showMessage("다운로드할 데이터가 없습니다.", true);
         return;
       }
-      const csv = buildCsvText(collectedData);
+      const csv = buildCsvText(rows);
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -657,7 +776,8 @@
       savedMarkers.forEach((savedMarker) => savedMarker.setMap(null));
       savedMarkers = [];
 
-      collectedData.forEach((item, index) => {
+      collectedRows.forEach((row, index) => {
+        const item = row.data;
         if (typeof item.lat !== "number" || typeof item.lng !== "number") {
           return;
         }
@@ -683,6 +803,56 @@
         marker.setIcon(createMarkerIcon("#0d6efd"));
       }
       savedMarkers.forEach((savedMarker) => savedMarker.setIcon(createMarkerIcon("#16a34a")));
+    }
+
+    function focusRowOnMaps(row) {
+      if (!row || !row.data) return;
+      const { lat, lng } = row.data;
+      if (typeof lat !== "number" || typeof lng !== "number") return;
+      moveMarker(lat, lng);
+      if (map) {
+        map.setCenter(new naver.maps.LatLng(lat, lng));
+        map.setZoom(18);
+      }
+      if (overviewMap) {
+        overviewMap.setCenter(new naver.maps.LatLng(lat, lng));
+      }
+    }
+
+    async function saveEditedRow(rowId, updatedData) {
+      await supabaseRequest(`${SUPABASE_TABLE}?id=eq.${rowId}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({ data: updatedData })
+      });
+    }
+
+    function renderDataList() {
+      elements.dataList.innerHTML = "";
+      elements.selectAllRows.checked = collectedRows.length > 0 && selectedRowIds.size === collectedRows.length;
+
+      collectedRows.forEach((row, index) => {
+        const item = row.data;
+        const wrap = document.createElement("div");
+        wrap.className = "data-row";
+
+        const checked = selectedRowIds.has(row.id) ? "checked" : "";
+        const created = row.created_at ? new Date(row.created_at).toLocaleString() : "-";
+        wrap.innerHTML = `
+          <div class="data-row-head">
+            <input type="checkbox" data-row-check="${row.id}" ${checked} />
+            <button class="mini-btn btn-secondary" type="button" data-row-focus="${row.id}">지도에서 보기</button>
+            <span class="data-row-title">데이터 #${index + 1}</span>
+            <button class="mini-btn" type="button" data-row-edit="${row.id}">수정</button>
+          </div>
+          <div class="row-meta">
+            좌표: ${item.lat?.toFixed ? item.lat.toFixed(6) : item.lat}, ${item.lng?.toFixed ? item.lng.toFixed(6) : item.lng}<br/>
+            주차장: ${item.parking_capacity ?? 0}대 / 경사로: ${item.ramp_available ? "있음" : "없음"} / 사진: ${(item.imageNames || []).length}장<br/>
+            저장시각: ${created}
+          </div>
+        `;
+        elements.dataList.appendChild(wrap);
+      });
     }
 
     function setMapType(type) {
@@ -800,6 +970,8 @@
     function resetFormKeepLocation() {
       elements.dataForm.reset();
       updateCoordinateText(selectedLat, selectedLng);
+      editingRowId = null;
+      setFormModeEditing(false);
     }
 
     function initializeEvents() {
@@ -815,10 +987,41 @@
         event.preventDefault();
         try {
           const payload = createDataObject();
-          await saveSharedData(payload);
-          collectedData.push(payload);
+          const files = Array.from(document.getElementById("images").files || []);
+          if (editingRowId) {
+            const targetRow = collectedRows.find((row) => row.id === editingRowId);
+            const existingImageFiles = targetRow?.data?.imageFiles || [];
+            if (files.length > 0) {
+              const appendedFiles = await uploadImagesToStorage(files);
+              payload.imageFiles = [...existingImageFiles, ...appendedFiles];
+              payload.imageNames = payload.imageFiles.map((file) => file.name);
+            } else {
+              payload.imageFiles = existingImageFiles;
+              payload.imageNames = existingImageFiles.map((file) => file.name);
+            }
+            await saveEditedRow(editingRowId, payload);
+            collectedRows = collectedRows.map((row) => (row.id === editingRowId ? { ...row, data: payload } : row));
+            saveToStorage();
+            renderSavedMarkers();
+            renderDataList();
+            resetFormKeepLocation();
+            showMessage("데이터를 수정했습니다.");
+            return;
+          }
+
+          if (files.length > 0) {
+            payload.imageFiles = await uploadImagesToStorage(files);
+            payload.imageNames = payload.imageFiles.map((file) => file.name);
+          }
+          const inserted = await saveSharedData(payload);
+          if (inserted && inserted.id) {
+            collectedRows.push(inserted);
+          } else {
+            await fetchSharedData();
+          }
           saveToStorage();
           renderSavedMarkers();
+          renderDataList();
           resetFormKeepLocation();
           showMessage("공유 저장소에 저장했습니다.");
         } catch (error) {
@@ -828,25 +1031,73 @@
 
       document.getElementById("downloadCsvBtn").addEventListener("click", downloadCsv);
 
-      document.getElementById("clearAllBtn").addEventListener("click", async () => {
-        if (!confirm("저장된 전체 데이터를 삭제할까요?")) {
+      elements.selectAllRows.addEventListener("change", () => {
+        if (elements.selectAllRows.checked) {
+          selectedRowIds = new Set(collectedRows.map((row) => row.id));
+        } else {
+          selectedRowIds.clear();
+        }
+        renderDataList();
+      });
+
+      elements.dataList.addEventListener("change", (event) => {
+        const checkId = event.target.getAttribute("data-row-check");
+        if (!checkId) return;
+        const idNum = Number(checkId);
+        if (event.target.checked) selectedRowIds.add(idNum);
+        else selectedRowIds.delete(idNum);
+        elements.selectAllRows.checked = collectedRows.length > 0 && selectedRowIds.size === collectedRows.length;
+      });
+
+      elements.dataList.addEventListener("click", async (event) => {
+        const focusId = event.target.getAttribute("data-row-focus");
+        if (focusId) {
+          const row = collectedRows.find((item) => item.id === Number(focusId));
+          focusRowOnMaps(row);
+          return;
+        }
+
+        const editId = event.target.getAttribute("data-row-edit");
+        if (!editId) return;
+        const row = collectedRows.find((item) => item.id === Number(editId));
+        if (!row) return;
+        editingRowId = row.id;
+        fillFormFromData(row.data);
+        focusRowOnMaps(row);
+        showMessage("선택 데이터 수정 모드입니다. 값을 바꾼 뒤 '수정 저장'을 눌러주세요.");
+      });
+
+      elements.deleteSelectedBtn.addEventListener("click", async () => {
+        const ids = Array.from(selectedRowIds);
+        if (ids.length === 0) {
+          showMessage("삭제할 데이터를 먼저 선택해주세요.", true);
+          return;
+        }
+        if (!confirm(`선택한 ${ids.length}개 데이터를 삭제할까요?`)) {
           return;
         }
         try {
-          await clearSharedData();
-          collectedData = [];
-          localStorage.removeItem(STORAGE_KEY);
-          elements.dataCount.textContent = "0";
+          const imageFilesToDelete = collectedRows
+            .filter((row) => selectedRowIds.has(row.id))
+            .flatMap((row) => row.data.imageFiles || []);
+          await deleteSharedRowsByIds(ids);
+          await deleteImagesFromStorage(imageFilesToDelete);
+          collectedRows = collectedRows.filter((row) => !selectedRowIds.has(row.id));
+          selectedRowIds.clear();
+          saveToStorage();
           renderSavedMarkers();
-          showMessage("공유 저장소 데이터를 초기화했습니다.");
+          renderDataList();
+          showMessage("선택한 데이터를 삭제했습니다.");
         } catch (error) {
-          showMessage(error.message || "초기화 중 오류가 발생했습니다.", true);
+          showMessage(error.message || "삭제 중 오류가 발생했습니다.", true);
         }
       });
     }
 
     loadStoredData();
+    renderDataList();
     initializeEvents();
+    setFormModeEditing(false);
     fetchSharedData().catch(() => {
       showMessage("공유 데이터 동기화에 실패했습니다. Supabase 설정을 확인해주세요.", true);
     });
