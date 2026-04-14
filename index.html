@@ -83,6 +83,14 @@
       margin-top: 10px;
       overflow: hidden;
     }
+    #overviewMap {
+      width: 100%;
+      height: clamp(220px, 35vh, 340px);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+      margin-top: 10px;
+    }
     .map-wrap {
       position: relative;
       margin-top: 10px;
@@ -292,6 +300,11 @@
       margin: 8px 0 0;
       font-size: 0.87rem;
     }
+    .map-marker-dot {
+      border-radius: 50%;
+      border: 2px solid #fff;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    }
 
     @media (max-width: 480px) {
       .app {
@@ -299,6 +312,9 @@
       }
       #map {
         height: clamp(240px, 38vh, 320px);
+      }
+      #overviewMap {
+        height: clamp(200px, 32vh, 280px);
       }
       .check-grid {
         grid-template-columns: 1fr;
@@ -377,6 +393,13 @@
       <p class="count-pill">저장된 데이터 개수: <span id="dataCount">0</span></p>
       <p id="message" class="msg"></p>
     </section>
+
+    <section class="card">
+      <h2 class="title">저장 데이터 위치 지도</h2>
+      <p class="desc">저장한 데이터가 누적될수록 아래 지도의 마커 수도 함께 증가합니다.</p>
+      <div id="overviewMap"></div>
+      <p class="small-hint">표시된 마커 수: <span id="markerCount">0</span></p>
+    </section>
   </main>
 
   <script src="https://openapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=738lerut3t"></script>
@@ -399,7 +422,9 @@
     ];
 
     let map = null;
+    let overviewMap = null;
     let marker = null;
+    let savedMarkers = [];
     let selectedLat = null;
     let selectedLng = null;
     let collectedData = [];
@@ -414,6 +439,7 @@
       dataForm: document.getElementById("dataForm"),
       dataCount: document.getElementById("dataCount"),
       message: document.getElementById("message"),
+      markerCount: document.getElementById("markerCount"),
       btnNormal: document.getElementById("btnNormal"),
       btnSatellite: document.getElementById("btnSatellite"),
       locateMeBtn: document.getElementById("locateMeBtn")
@@ -449,6 +475,21 @@
     function saveToStorage() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(collectedData));
       elements.dataCount.textContent = String(collectedData.length);
+    }
+
+    function getMarkerPixelSize() {
+      if (window.innerWidth <= 480) return 16;
+      if (window.innerWidth <= 768) return 20;
+      return 24;
+    }
+
+    function createMarkerIcon(color) {
+      const size = getMarkerPixelSize();
+      return {
+        content: `<div class="map-marker-dot" style="width:${size}px;height:${size}px;background:${color};"></div>`,
+        size: new naver.maps.Size(size, size),
+        anchor: new naver.maps.Point(size / 2, size / 2)
+      };
     }
 
     function parseNumberOrDefault(value, defaultValue) {
@@ -531,7 +572,8 @@
 
         marker = new naver.maps.Marker({
           position: new naver.maps.LatLng(lat, lng),
-          map: map
+          map: map,
+          icon: createMarkerIcon("#0d6efd")
         });
         moveMarker(lat, lng);
 
@@ -543,6 +585,51 @@
       } catch (error) {
         showMessage("지도를 초기화하는 중 오류가 발생했습니다.", true);
       }
+    }
+
+    function initOverviewMap(lat, lng) {
+      if (overviewMap) {
+        return;
+      }
+      overviewMap = new naver.maps.Map("overviewMap", {
+        center: new naver.maps.LatLng(lat, lng),
+        zoom: 13
+      });
+    }
+
+    function renderSavedMarkers() {
+      if (!overviewMap) {
+        return;
+      }
+      savedMarkers.forEach((savedMarker) => savedMarker.setMap(null));
+      savedMarkers = [];
+
+      collectedData.forEach((item, index) => {
+        if (typeof item.lat !== "number" || typeof item.lng !== "number") {
+          return;
+        }
+        const savedMarker = new naver.maps.Marker({
+          position: new naver.maps.LatLng(item.lat, item.lng),
+          map: overviewMap,
+          icon: createMarkerIcon("#16a34a"),
+          title: `저장 데이터 ${index + 1}`
+        });
+        savedMarkers.push(savedMarker);
+      });
+
+      elements.markerCount.textContent = String(savedMarkers.length);
+      if (savedMarkers.length > 0) {
+        overviewMap.setCenter(savedMarkers[savedMarkers.length - 1].getPosition());
+      } else if (selectedLat !== null && selectedLng !== null) {
+        overviewMap.setCenter(new naver.maps.LatLng(selectedLat, selectedLng));
+      }
+    }
+
+    function refreshMarkerIcons() {
+      if (marker) {
+        marker.setIcon(createMarkerIcon("#0d6efd"));
+      }
+      savedMarkers.forEach((savedMarker) => savedMarker.setIcon(createMarkerIcon("#16a34a")));
     }
 
     function setMapType(type) {
@@ -565,12 +652,14 @@
           const { latitude, longitude } = position.coords;
           if (!map) {
             initMap(latitude, longitude);
+            initOverviewMap(latitude, longitude);
             showMainUi();
           } else {
             map.setCenter(new naver.maps.LatLng(latitude, longitude));
             map.setZoom(18);
             moveMarker(latitude, longitude);
           }
+          renderSavedMarkers();
           showMessage("현재 위치로 이동했습니다.");
         },
         () => {
@@ -601,6 +690,10 @@
       if (selectedLat !== null && selectedLng !== null) {
         map.setCenter(new naver.maps.LatLng(selectedLat, selectedLng));
       }
+      if (overviewMap) {
+        naver.maps.Event.trigger(overviewMap, "resize");
+      }
+      refreshMarkerIcons();
     }
 
     function handleGeoError(error) {
@@ -630,11 +723,13 @@
           const { latitude, longitude } = position.coords;
           if (!map) {
             initMap(latitude, longitude);
+            initOverviewMap(latitude, longitude);
           } else {
             map.setCenter(new naver.maps.LatLng(latitude, longitude));
             map.setZoom(18);
             moveMarker(latitude, longitude);
           }
+          renderSavedMarkers();
           showMainUi();
           showMessage("현재 위치를 불러왔습니다.");
         },
@@ -669,6 +764,7 @@
           const payload = createDataObject();
           collectedData.push(payload);
           saveToStorage();
+          renderSavedMarkers();
           resetFormKeepLocation();
           showMessage("데이터를 저장했습니다.");
         } catch (error) {
@@ -685,6 +781,7 @@
         collectedData = [];
         localStorage.removeItem(STORAGE_KEY);
         elements.dataCount.textContent = "0";
+        renderSavedMarkers();
         showMessage("모든 데이터를 초기화했습니다.");
       });
     }
