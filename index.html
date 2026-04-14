@@ -358,6 +358,7 @@
       <p id="permissionError" class="error-text"></p>
       <button id="requestLocationBtn" type="button">위치 권한 허용하기</button>
       <button id="retryLocationBtn" class="btn-secondary hidden" type="button">다시 요청</button>
+      <button id="startWithoutLocationBtn" class="btn-secondary" type="button">위치 없이 지도 시작</button>
       <p class="small-hint">모바일 브라우저에서는 HTTPS 환경에서 위치 권한이 정상 동작합니다.</p>
     </div>
   </div>
@@ -447,6 +448,7 @@
   <script>
     // localStorage에 저장할 때 사용할 고정 키
     const STORAGE_KEY = "barrierFreeMapData";
+    const DEFAULT_CENTER = { lat: 37.5665, lng: 126.9780 };
     const SUPABASE_TABLE = "barrier_entries";
     const SUPABASE_URL = "https://ghdcjmmxfeaedsspterz.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_lvBfmbpcNmM4MJvu-lqIBQ_j2K1BHgM";
@@ -480,6 +482,7 @@
       permissionError: document.getElementById("permissionError"),
       requestLocationBtn: document.getElementById("requestLocationBtn"),
       retryLocationBtn: document.getElementById("retryLocationBtn"),
+      startWithoutLocationBtn: document.getElementById("startWithoutLocationBtn"),
       mainApp: document.getElementById("mainApp"),
       coordText: document.getElementById("coordText"),
       dataForm: document.getElementById("dataForm"),
@@ -864,13 +867,54 @@
       elements.btnSatellite.classList.toggle("active", type === "SATELLITE");
     }
 
+    function getCurrentPositionPromise(options) {
+      return new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, options);
+      });
+    }
+
+    async function getAccuratePosition() {
+      const first = await getCurrentPositionPromise({
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 0
+      });
+      const firstAccuracy = Number(first.coords.accuracy || 9999);
+
+      // 정확도가 좋지 않으면 한 번 더 시도하여 더 나은 좌표를 사용
+      if (firstAccuracy > 80) {
+        try {
+          const second = await getCurrentPositionPromise({
+            enableHighAccuracy: true,
+            timeout: 12000,
+            maximumAge: 0
+          });
+          const secondAccuracy = Number(second.coords.accuracy || 9999);
+          return secondAccuracy < firstAccuracy ? second : first;
+        } catch (_) {
+          return first;
+        }
+      }
+      return first;
+    }
+
+    function startWithoutLocation() {
+      if (!map) {
+        initMap(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
+        initOverviewMap(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
+      }
+      showMainUi();
+      elements.permissionError.textContent = "";
+      showMessage("위치 권한 없이 시작했습니다. 지도에서 지점을 눌러 좌표를 선택하세요.");
+    }
+
     function moveToCurrentLocation() {
       if (!("geolocation" in navigator)) {
         showMessage("이 브라우저는 위치 정보를 지원하지 않습니다.", true);
         return;
       }
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
+      getAccuratePosition()
+        .then((position) => {
           const { latitude, longitude } = position.coords;
           if (!map) {
             initMap(latitude, longitude);
@@ -882,17 +926,12 @@
             moveMarker(latitude, longitude);
           }
           renderSavedMarkers();
-          showMessage("현재 위치로 이동했습니다.");
-        },
-        () => {
+          const accuracy = Math.round(Number(position.coords.accuracy || 0));
+          showMessage(accuracy > 0 ? `현재 위치로 이동했습니다. (정확도 약 ${accuracy}m)` : "현재 위치로 이동했습니다.");
+        })
+        .catch(() => {
           showMessage("현재 위치를 가져오지 못했습니다. 위치 권한을 확인해주세요.", true);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0
-        }
-      );
+        });
     }
 
     function showMainUi() {
@@ -940,8 +979,8 @@
         return;
       }
 
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
+      getAccuratePosition()
+        .then((position) => {
           const { latitude, longitude } = position.coords;
           if (!map) {
             initMap(latitude, longitude);
@@ -953,17 +992,16 @@
           }
           renderSavedMarkers();
           showMainUi();
-          showMessage("현재 위치를 불러왔습니다.");
-        },
-        (error) => {
+          const accuracy = Math.round(Number(position.coords.accuracy || 0));
+          if (accuracy > 80) {
+            showMessage(`현재 위치를 불러왔지만 오차가 큽니다(약 ${accuracy}m). 지도에서 직접 좌표를 선택하세요.`, true);
+          } else {
+            showMessage(`현재 위치를 불러왔습니다. (정확도 약 ${accuracy}m)`);
+          }
+        })
+        .catch((error) => {
           handleGeoError(error);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0
-        }
-      );
+        });
     }
 
     function resetFormKeepLocation() {
@@ -976,6 +1014,7 @@
     function initializeEvents() {
       elements.requestLocationBtn.addEventListener("click", requestCurrentLocation);
       elements.retryLocationBtn.addEventListener("click", requestCurrentLocation);
+      elements.startWithoutLocationBtn.addEventListener("click", startWithoutLocation);
       elements.btnNormal.addEventListener("click", () => setMapType("NORMAL"));
       elements.btnSatellite.addEventListener("click", () => setMapType("SATELLITE"));
       elements.locateMeBtn.addEventListener("click", moveToCurrentLocation);
