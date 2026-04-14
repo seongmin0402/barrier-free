@@ -83,6 +83,67 @@
       margin-top: 10px;
       overflow: hidden;
     }
+    .map-wrap {
+      position: relative;
+      margin-top: 10px;
+    }
+    .map-wrap #map {
+      margin-top: 0;
+    }
+    .map-controls {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      display: grid;
+      gap: 8px;
+      z-index: 500;
+      width: auto;
+    }
+    .control-row {
+      display: flex;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 4px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+    .map-control-btn {
+      width: auto;
+      min-width: 56px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: #111827;
+      font-size: 0.85rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .map-control-btn:hover {
+      background: #f3f4f6;
+    }
+    .map-control-btn.active {
+      background: #0f172a;
+      color: #fff;
+      border-color: #0f172a;
+    }
+    .locate-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.97);
+      color: #111827;
+      font-size: 1.1rem;
+      font-weight: 900;
+      padding: 0;
+      margin-left: auto;
+      box-shadow: var(--shadow);
+    }
+    .locate-btn:hover {
+      background: #eff6ff;
+    }
 
     .form-grid {
       display: grid;
@@ -265,7 +326,16 @@
     <section class="card">
       <h1 class="title">베리어프리 지도 데이터 수집</h1>
       <p class="desc">지도에서 위치를 탭하면 선택 좌표가 바뀝니다. 아래 한국어 항목으로 접근성 정보를 입력하세요.</p>
-      <div id="map"></div>
+      <div class="map-wrap">
+        <div id="map"></div>
+        <div class="map-controls">
+          <div class="control-row">
+            <button id="btnNormal" class="map-control-btn active" type="button">일반</button>
+            <button id="btnSatellite" class="map-control-btn" type="button">위성</button>
+          </div>
+          <button id="locateMeBtn" class="locate-btn" type="button" aria-label="내 위치로 이동">◎</button>
+        </div>
+      </div>
       <p class="small-hint">Naver Maps JavaScript API</p>
     </section>
 
@@ -343,7 +413,10 @@
       coordText: document.getElementById("coordText"),
       dataForm: document.getElementById("dataForm"),
       dataCount: document.getElementById("dataCount"),
-      message: document.getElementById("message")
+      message: document.getElementById("message"),
+      btnNormal: document.getElementById("btnNormal"),
+      btnSatellite: document.getElementById("btnSatellite"),
+      locateMeBtn: document.getElementById("locateMeBtn")
     };
 
     function showMessage(text, isError = false) {
@@ -472,6 +545,45 @@
       }
     }
 
+    function setMapType(type) {
+      if (!map || !window.naver || !window.naver.maps || !window.naver.maps.MapTypeId) {
+        return;
+      }
+      const targetType = type === "SATELLITE" ? naver.maps.MapTypeId.SATELLITE : naver.maps.MapTypeId.NORMAL;
+      map.setMapTypeId(targetType);
+      elements.btnNormal.classList.toggle("active", type !== "SATELLITE");
+      elements.btnSatellite.classList.toggle("active", type === "SATELLITE");
+    }
+
+    function moveToCurrentLocation() {
+      if (!("geolocation" in navigator)) {
+        showMessage("이 브라우저는 위치 정보를 지원하지 않습니다.", true);
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          if (!map) {
+            initMap(latitude, longitude);
+            showMainUi();
+          } else {
+            map.setCenter(new naver.maps.LatLng(latitude, longitude));
+            map.setZoom(18);
+            moveMarker(latitude, longitude);
+          }
+          showMessage("현재 위치로 이동했습니다.");
+        },
+        () => {
+          showMessage("현재 위치를 가져오지 못했습니다. 위치 권한을 확인해주세요.", true);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        }
+      );
+    }
+
     function showMainUi() {
       elements.permissionModal.classList.add("hidden");
       elements.mainApp.classList.remove("hidden");
@@ -545,6 +657,9 @@
     function initializeEvents() {
       elements.requestLocationBtn.addEventListener("click", requestCurrentLocation);
       elements.retryLocationBtn.addEventListener("click", requestCurrentLocation);
+      elements.btnNormal.addEventListener("click", () => setMapType("NORMAL"));
+      elements.btnSatellite.addEventListener("click", () => setMapType("SATELLITE"));
+      elements.locateMeBtn.addEventListener("click", moveToCurrentLocation);
       window.addEventListener("resize", refreshMapSize);
       window.addEventListener("orientationchange", refreshMapSize);
 
