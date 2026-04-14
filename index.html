@@ -645,14 +645,26 @@
         if (!file || !(file instanceof File) || file.size === 0) {
           throw new Error(`유효하지 않은 파일입니다: ${file?.name || "이름없음"}`);
         }
-        const safeName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${file.name}`.replace(/\s+/g, "_");
+        const originalName = file.name || "image";
+        const extMatch = originalName.match(/\.([a-zA-Z0-9]+)$/);
+        const extension = extMatch ? extMatch[1].toLowerCase() : "jpg";
+        const baseName = originalName
+          .replace(/\.[^/.]+$/, "")
+          .normalize("NFKD")
+          .replace(/[^\x00-\x7F]/g, "")
+          .replace(/[^a-zA-Z0-9_-]/g, "_")
+          .replace(/_+/g, "_")
+          .replace(/^_+|_+$/g, "")
+          .slice(0, 40);
+        const normalizedBase = baseName || "image";
+        const safeName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${normalizedBase}.${extension}`;
         const objectPath = `barrier/${safeName}`;
         let success = false;
         let lastError = "";
 
         for (const bucket of STORAGE_BUCKETS) {
           const response = await fetch(
-            `${storageTarget.url}/storage/v1/object/${bucket}/${encodeURIComponent(objectPath)}`,
+            `${storageTarget.url}/storage/v1/object/${bucket}/${objectPath}`,
             {
               method: "POST",
               headers: {
