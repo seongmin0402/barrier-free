@@ -466,7 +466,13 @@
       <form id="dataForm" class="form-grid">
         <div>
           <label for="images">사진 업로드 (여러 장 가능)</label>
-          <input id="images" type="file" accept="image/*" multiple />
+          <input id="galleryInput" type="file" accept="image/*" multiple class="hidden" />
+          <input id="cameraInput" type="file" accept="image/*" capture="environment" class="hidden" />
+          <div class="btn-row" style="margin-top:6px;">
+            <button id="pickPhotosBtn" class="btn-secondary" type="button">저장된 사진 선택</button>
+            <button id="openCameraBtn" class="btn-secondary" type="button">📷 카메라로 촬영</button>
+          </div>
+          <p id="selectedPhotosInfo" class="small-hint">선택된 사진: 0장</p>
         </div>
 
         <div>
@@ -576,6 +582,7 @@
     let selectedRowIds = new Set();
     let editingRowKey = null;
     let activeInsertTargetIndex = 0;
+    let pendingUploadFiles = [];
 
     const elements = {
       permissionModal: document.getElementById("permissionModal"),
@@ -588,6 +595,11 @@
       dataForm: document.getElementById("dataForm"),
       dataCount: document.getElementById("dataCount"),
       message: document.getElementById("message"),
+      galleryInput: document.getElementById("galleryInput"),
+      cameraInput: document.getElementById("cameraInput"),
+      pickPhotosBtn: document.getElementById("pickPhotosBtn"),
+      openCameraBtn: document.getElementById("openCameraBtn"),
+      selectedPhotosInfo: document.getElementById("selectedPhotosInfo"),
       markerCount: document.getElementById("markerCount"),
       dataList: document.getElementById("dataList"),
       selectAllRows: document.getElementById("selectAllRows"),
@@ -641,6 +653,29 @@
       return `${row._targetId || "primary"}:${row.id}`;
     }
 
+    function updateSelectedPhotosInfo() {
+      const names = pendingUploadFiles.map((file) => file.name).slice(0, 3).join(", ");
+      const suffix = pendingUploadFiles.length > 3 ? ` 외 ${pendingUploadFiles.length - 3}장` : "";
+      elements.selectedPhotosInfo.textContent =
+        pendingUploadFiles.length > 0
+          ? `선택된 사진: ${pendingUploadFiles.length}장 (${names}${suffix})`
+          : "선택된 사진: 0장";
+    }
+
+    function addPendingFiles(fileList) {
+      const files = Array.from(fileList || []);
+      if (files.length === 0) return;
+      pendingUploadFiles.push(...files);
+      updateSelectedPhotosInfo();
+    }
+
+    function clearPendingFiles() {
+      pendingUploadFiles = [];
+      elements.galleryInput.value = "";
+      elements.cameraInput.value = "";
+      updateSelectedPhotosInfo();
+    }
+
     function getMarkerPixelSize() {
       if (window.innerWidth <= 480) return 16;
       if (window.innerWidth <= 768) return 20;
@@ -665,8 +700,6 @@
     }
 
     function createDataObject() {
-      const files = document.getElementById("images").files;
-
       // 위치는 저장 전 필수 검증
       if (selectedLat === null || selectedLng === null) {
         throw new Error("유효한 좌표가 없습니다. 위치 권한을 다시 확인하세요.");
@@ -685,7 +718,7 @@
         parking_distance_entrance_m: parseNumberOrDefault(document.getElementById("parking_distance_entrance_m").value, 0),
         ramp_available: document.getElementById("ramp_available").checked,
         description: document.getElementById("description").value.trim(),
-        imageNames: Array.from(files).map((file) => file.name),
+        imageNames: pendingUploadFiles.map((file) => file.name),
         imageFiles: []
       };
     }
@@ -710,6 +743,7 @@
         moveMarker(data.lat, data.lng);
         if (map) map.setCenter(new naver.maps.LatLng(data.lat, data.lng));
       }
+      clearPendingFiles();
       setFormModeEditing(true);
     }
 
@@ -772,7 +806,8 @@
           );
           if (response.ok) {
             uploaded.push({
-              name: file.name,
+              name: safeName,
+              originalName: file.name,
               type: file.type || "image/jpeg",
               bucket: bucket,
               path: objectPath,
@@ -1272,6 +1307,7 @@
       elements.dataForm.reset();
       updateCoordinateText(selectedLat, selectedLng);
       editingRowKey = null;
+      clearPendingFiles();
       setFormModeEditing(false);
     }
 
@@ -1279,6 +1315,16 @@
       elements.requestLocationBtn.addEventListener("click", requestCurrentLocation);
       elements.retryLocationBtn.addEventListener("click", requestCurrentLocation);
       elements.startWithoutLocationBtn.addEventListener("click", startWithoutLocation);
+      elements.pickPhotosBtn.addEventListener("click", () => elements.galleryInput.click());
+      elements.openCameraBtn.addEventListener("click", () => elements.cameraInput.click());
+      elements.galleryInput.addEventListener("change", (event) => {
+        addPendingFiles(event.target.files);
+        elements.galleryInput.value = "";
+      });
+      elements.cameraInput.addEventListener("change", (event) => {
+        addPendingFiles(event.target.files);
+        elements.cameraInput.value = "";
+      });
       elements.btnNormal.addEventListener("click", () => setMapType("NORMAL"));
       elements.btnSatellite.addEventListener("click", () => setMapType("SATELLITE"));
       elements.locateMeBtn.addEventListener("click", moveToCurrentLocation);
@@ -1289,7 +1335,7 @@
         event.preventDefault();
         try {
           const payload = createDataObject();
-          const files = Array.from(document.getElementById("images").files || []);
+          const files = [...pendingUploadFiles];
           if (editingRowKey) {
             const targetRow = collectedRows.find((row) => getRowKey(row) === editingRowKey);
             const existingImageFiles = targetRow?.data?.imageFiles || [];
@@ -1406,6 +1452,7 @@
     renderDataList();
     initializeEvents();
     setFormModeEditing(false);
+    updateSelectedPhotosInfo();
     window.addEventListener("error", () => {
       showMessage("일시적인 오류가 발생했습니다. 새로고침 후 다시 시도해주세요.", true);
     });
