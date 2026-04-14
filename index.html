@@ -4,12 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>베리어프리 지도 데이터 수집</title>
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-    crossorigin=""
-  />
   <style>
     :root {
       --bg: #f4f6f8;
@@ -271,7 +265,7 @@
       <h1 class="title">베리어프리 지도 데이터 수집</h1>
       <p class="desc">지도에서 위치를 탭하면 선택 좌표가 바뀝니다. 아래 한국어 항목으로 접근성 정보를 입력하세요.</p>
       <div id="map"></div>
-      <p class="small-hint">OpenStreetMap + Leaflet.js</p>
+      <p class="small-hint">Naver Maps JavaScript API</p>
     </section>
 
     <section class="card">
@@ -314,11 +308,7 @@
     </section>
   </main>
 
-  <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-    crossorigin=""
-  ></script>
+  <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpClientId=738lerut3t"></script>
   <script>
     // localStorage에 저장할 때 사용할 고정 키
     const STORAGE_KEY = "barrierFreeMapData";
@@ -452,24 +442,28 @@
     function moveMarker(lat, lng) {
       selectedLat = lat;
       selectedLng = lng;
-      marker.setLatLng([lat, lng]);
+      marker.setPosition(new naver.maps.LatLng(lat, lng));
       updateCoordinateText(lat, lng);
     }
 
     function initMap(lat, lng) {
       try {
-        map = L.map("map").setView([lat, lng], 18);
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          maxZoom: 20,
-          attribution: "&copy; OpenStreetMap contributors"
-        }).addTo(map);
+        // 지도를 삽입할 HTML 요소 지정 후 네이버 지도 객체 생성
+        const mapDiv = document.getElementById("map");
+        map = new naver.maps.Map(mapDiv, {
+          center: new naver.maps.LatLng(lat, lng),
+          zoom: 18
+        });
 
-        marker = L.marker([lat, lng]).addTo(map);
+        marker = new naver.maps.Marker({
+          position: new naver.maps.LatLng(lat, lng),
+          map: map
+        });
         moveMarker(lat, lng);
 
         // 사용자가 지도 임의 지점을 탭하면 좌표를 수정하여 현장 선택을 지원
-        map.on("click", (event) => {
-          moveMarker(event.latlng.lat, event.latlng.lng);
+        naver.maps.Event.addListener(map, "click", (event) => {
+          moveMarker(event.coord.y, event.coord.x);
           showMessage("지도 탭으로 좌표를 변경했습니다.");
         });
       } catch (error) {
@@ -515,7 +509,8 @@
           if (!map) {
             initMap(latitude, longitude);
           } else {
-            map.setView([latitude, longitude], 18);
+            map.setCenter(new naver.maps.LatLng(latitude, longitude));
+            map.setZoom(18);
             moveMarker(latitude, longitude);
           }
           showMainUi();
