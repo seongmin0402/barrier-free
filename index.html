@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>베리어프리 지도 데이터 수집</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --text: #1f2937;
+      --subtle: #6b7280;
+      --primary: #0d6efd;
+      --primary-dark: #0b5ed7;
+      --danger: #dc3545;
+      --danger-dark: #bb2d3b;
+      --border: #e5e7eb;
+      --shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+      --radius: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .app {
+      min-height: 100vh;
+      padding: 14px;
+      max-width: 680px;
+      margin: 0 auto;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .coord-banner {
+      background: #0f172a;
+      color: #f8fafc;
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+      font-weight: 600;
+      box-shadow: var(--shadow);
+      position: sticky;
+      top: 8px;
+      z-index: 50;
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 14px;
+      margin-bottom: 14px;
+      border: 1px solid var(--border);
+    }
+
+    .title {
+      margin: 0 0 8px;
+      font-size: 1.15rem;
+    }
+
+    .desc {
+      color: var(--subtle);
+      margin: 0;
+      line-height: 1.5;
+      font-size: 0.95rem;
+    }
+
+    #map {
+      width: 100%;
+      height: 300px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      margin-top: 10px;
+    }
+
+    .form-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    label {
+      font-weight: 600;
+      font-size: 0.95rem;
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    input,
+    select,
+    textarea,
+    button {
+      width: 100%;
+      font-size: 1rem;
+      border-radius: 10px;
+    }
+
+    input,
+    select,
+    textarea {
+      border: 1px solid var(--border);
+      background: #fff;
+      padding: 11px 12px;
+    }
+
+    textarea {
+      min-height: 92px;
+      resize: vertical;
+    }
+
+    .check-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .check-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #fafafa;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 9px;
+    }
+
+    .check-item input {
+      width: 20px;
+      height: 20px;
+      margin: 0;
+      flex-shrink: 0;
+    }
+
+    .btn-row {
+      display: grid;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    button {
+      border: none;
+      padding: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      color: #fff;
+      background: var(--primary);
+    }
+
+    button:hover {
+      background: var(--primary-dark);
+    }
+
+    .btn-secondary {
+      background: #475569;
+    }
+
+    .btn-secondary:hover {
+      background: #334155;
+    }
+
+    .btn-danger {
+      background: var(--danger);
+    }
+
+    .btn-danger:hover {
+      background: var(--danger-dark);
+    }
+
+    .count-pill {
+      margin-top: 8px;
+      font-weight: 700;
+      color: #111827;
+      background: #e0f2fe;
+      border: 1px solid #bae6fd;
+      display: inline-block;
+      padding: 8px 12px;
+      border-radius: 999px;
+    }
+
+    .msg {
+      margin-top: 8px;
+      font-size: 0.94rem;
+      font-weight: 600;
+      color: #0b5ed7;
+      min-height: 24px;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.75);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      padding: 16px;
+    }
+
+    .modal-card {
+      width: min(100%, 460px);
+      background: #fff;
+      border-radius: 18px;
+      padding: 20px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+    }
+
+    .modal-card h2 {
+      margin-top: 0;
+    }
+
+    .error-text {
+      color: #b91c1c;
+      font-weight: 700;
+      min-height: 24px;
+      margin: 10px 0 0;
+    }
+
+    .small-hint {
+      color: var(--subtle);
+      margin: 8px 0 0;
+      font-size: 0.87rem;
+    }
+
+    @media (max-width: 480px) {
+      .app {
+        padding: 10px;
+      }
+      #map {
+        height: 260px;
+      }
+      .check-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="permissionModal" class="modal-overlay">
+    <div class="modal-card">
+      <h2 class="title">위치 권한 안내</h2>
+      <p class="desc">이 서비스는 위치 기반 데이터 수집을 위해 GPS 권한이 필요합니다.</p>
+      <p id="permissionError" class="error-text"></p>
+      <button id="requestLocationBtn" type="button">위치 권한 허용하기</button>
+      <button id="retryLocationBtn" class="btn-secondary hidden" type="button">다시 요청</button>
+      <p class="small-hint">모바일 브라우저에서는 HTTPS 환경에서 위치 권한이 정상 동작합니다.</p>
+    </div>
+  </div>
+
+  <main id="mainApp" class="app hidden">
+    <section class="coord-banner">
+      현재 좌표: <span id="coordText">위치 정보 없음</span>
+    </section>
+
+    <section class="card">
+      <h1 class="title">베리어프리 지도 데이터 수집</h1>
+      <p class="desc">지도에서 위치를 탭하면 선택 좌표가 바뀝니다. 현재 좌표 기준으로 시설 정보를 입력하세요.</p>
+      <div id="map"></div>
+      <p class="small-hint">OpenStreetMap + Leaflet.js</p>
+    </section>
+
+    <section class="card">
+      <form id="dataForm" class="form-grid">
+        <div>
+          <label for="images">사진 업로드 (여러 장 가능)</label>
+          <input id="images" type="file" accept="image/*" multiple />
+        </div>
+
+        <div>
+          <label for="type">시설 유형</label>
+          <select id="type" required>
+            <option value="">선택하세요</option>
+            <option value="ramp">ramp</option>
+            <option value="stairs">stairs</option>
+            <option value="elevator">elevator</option>
+            <option value="toilet">toilet</option>
+            <option value="parking">parking</option>
+            <option value="transport">transport</option>
+          </select>
+        </div>
+
+        <div>
+          <label>접근성 데이터</label>
+          <div class="check-grid">
+            <label class="check-item"><input type="checkbox" id="wheelchair_access" />wheelchair_access</label>
+            <label class="check-item"><input type="checkbox" id="elevator_available" />elevator_available</label>
+            <label class="check-item"><input type="checkbox" id="braille_available" />braille_available</label>
+            <label class="check-item"><input type="checkbox" id="toilet_available" />toilet_available</label>
+            <label class="check-item"><input type="checkbox" id="parking_available" />parking_available</label>
+            <label class="check-item"><input type="checkbox" id="ramp_available" />ramp_available</label>
+          </div>
+        </div>
+
+        <div>
+          <label for="parking_capacity">parking_capacity (숫자)</label>
+          <input id="parking_capacity" type="number" min="0" step="1" placeholder="예: 10" />
+        </div>
+
+        <div>
+          <label for="parking_distance">parking_distance (m)</label>
+          <input id="parking_distance" type="number" min="0" step="1" placeholder="예: 25" />
+        </div>
+
+        <div>
+          <label for="slope">slope (경사도)</label>
+          <input id="slope" type="number" step="0.1" placeholder="예: 4.5" />
+        </div>
+
+        <div>
+          <label for="width">width (cm)</label>
+          <input id="width" type="number" min="0" step="0.1" placeholder="예: 120" />
+        </div>
+
+        <div>
+          <label for="transport_info">transport_info</label>
+          <input id="transport_info" type="text" placeholder="예: 버스 정류장 100m 이내" />
+        </div>
+
+        <div>
+          <label for="description">description</label>
+          <textarea id="description" placeholder="추가 설명을 입력하세요"></textarea>
+        </div>
+
+        <div class="btn-row">
+          <button id="saveBtn" type="submit">저장</button>
+          <button id="downloadCsvBtn" class="btn-secondary" type="button">CSV 다운로드</button>
+          <button id="clearAllBtn" class="btn-danger" type="button">초기화 (전체 삭제)</button>
+        </div>
+      </form>
+
+      <p class="count-pill">저장된 데이터 개수: <span id="dataCount">0</span></p>
+      <p id="message" class="msg"></p>
+    </section>
+  </main>
+
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <script>
+    // localStorage에 저장할 때 사용할 고정 키
+    const STORAGE_KEY = "barrierFreeMapData";
+
+    // CSV의 컬럼 순서를 요구사항과 동일하게 고정
+    const CSV_COLUMNS = [
+      "lat",
+      "lng",
+      "type",
+      "wheelchair_access",
+      "elevator_available",
+      "braille_available",
+      "toilet_available",
+      "parking_available",
+      "parking_capacity",
+      "parking_distance",
+      "ramp_available",
+      "slope",
+      "width",
+      "transport_info",
+      "description",
+      "imageNames"
+    ];
+
+    let map = null;
+    let marker = null;
+    let selectedLat = null;
+    let selectedLng = null;
+    let collectedData = [];
+
+    const elements = {
+      permissionModal: document.getElementById("permissionModal"),
+      permissionError: document.getElementById("permissionError"),
+      requestLocationBtn: document.getElementById("requestLocationBtn"),
+      retryLocationBtn: document.getElementById("retryLocationBtn"),
+      mainApp: document.getElementById("mainApp"),
+      coordText: document.getElementById("coordText"),
+      dataForm: document.getElementById("dataForm"),
+      dataCount: document.getElementById("dataCount"),
+      message: document.getElementById("message")
+    };
+
+    function showMessage(text, isError = false) {
+      elements.message.textContent = text;
+      elements.message.style.color = isError ? "#b91c1c" : "#0b5ed7";
+    }
+
+    function updateCoordinateText(lat, lng) {
+      if (typeof lat !== "number" || typeof lng !== "number") {
+        elements.coordText.textContent = "위치 정보 없음";
+        return;
+      }
+      elements.coordText.textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    }
+
+    function loadStoredData() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        collectedData = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(collectedData)) {
+          collectedData = [];
+        }
+      } catch (error) {
+        collectedData = [];
+        showMessage("저장된 데이터를 읽는 중 오류가 발생했습니다.", true);
+      }
+      elements.dataCount.textContent = String(collectedData.length);
+    }
+
+    function saveToStorage() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(collectedData));
+      elements.dataCount.textContent = String(collectedData.length);
+    }
+
+    function parseNumberOrDefault(value, defaultValue) {
+      if (value === "" || value === null || value === undefined) {
+        return defaultValue;
+      }
+      const parsed = Number(value);
+      return Number.isNaN(parsed) ? defaultValue : parsed;
+    }
+
+    function parseNumberOrNull(value) {
+      if (value === "" || value === null || value === undefined) {
+        return null;
+      }
+      const parsed = Number(value);
+      return Number.isNaN(parsed) ? null : parsed;
+    }
+
+    function createDataObject() {
+      const files = document.getElementById("images").files;
+      const type = document.getElementById("type").value;
+
+      // 위치 및 시설 유형은 저장 전 필수 검증
+      if (selectedLat === null || selectedLng === null) {
+        throw new Error("유효한 좌표가 없습니다. 위치 권한을 다시 확인하세요.");
+      }
+      if (!type) {
+        throw new Error("시설 유형(type)을 선택해주세요.");
+      }
+
+      return {
+        lat: selectedLat,
+        lng: selectedLng,
+        type: type,
+        wheelchair_access: document.getElementById("wheelchair_access").checked,
+        elevator_available: document.getElementById("elevator_available").checked,
+        braille_available: document.getElementById("braille_available").checked,
+        toilet_available: document.getElementById("toilet_available").checked,
+        parking_available: document.getElementById("parking_available").checked,
+        parking_capacity: parseNumberOrDefault(document.getElementById("parking_capacity").value, 0),
+        parking_distance: parseNumberOrDefault(document.getElementById("parking_distance").value, 0),
+        ramp_available: document.getElementById("ramp_available").checked,
+        slope: parseNumberOrNull(document.getElementById("slope").value),
+        width: parseNumberOrNull(document.getElementById("width").value),
+        transport_info: document.getElementById("transport_info").value.trim(),
+        description: document.getElementById("description").value.trim(),
+        imageNames: Array.from(files).map((file) => file.name)
+      };
+    }
+
+    function csvEscape(value) {
+      if (Array.isArray(value)) {
+        value = value.join("|");
+      }
+      const str = value === null || value === undefined ? "" : String(value);
+      return `"${str.replace(/"/g, "\"\"")}"`;
+    }
+
+    function buildCsvText(dataRows) {
+      const header = CSV_COLUMNS.join(",");
+      const body = dataRows.map((row) => CSV_COLUMNS.map((column) => csvEscape(row[column])).join(","));
+      return [header, ...body].join("\n");
+    }
+
+    function downloadCsv() {
+      if (collectedData.length === 0) {
+        showMessage("다운로드할 데이터가 없습니다.", true);
+        return;
+      }
+      const csv = buildCsvText(collectedData);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `barrier_free_data_${Date.now()}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showMessage("CSV 파일 다운로드를 시작했습니다.");
+    }
+
+    function moveMarker(lat, lng) {
+      selectedLat = lat;
+      selectedLng = lng;
+      marker.setLatLng([lat, lng]);
+      updateCoordinateText(lat, lng);
+    }
+
+    function initMap(lat, lng) {
+      try {
+        map = L.map("map").setView([lat, lng], 18);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          maxZoom: 20,
+          attribution: "&copy; OpenStreetMap contributors"
+        }).addTo(map);
+
+        marker = L.marker([lat, lng]).addTo(map);
+        moveMarker(lat, lng);
+
+        // 사용자가 지도 임의 지점을 탭하면 좌표를 수정하여 현장 선택을 지원
+        map.on("click", (event) => {
+          moveMarker(event.latlng.lat, event.latlng.lng);
+          showMessage("지도 탭으로 좌표를 변경했습니다.");
+        });
+      } catch (error) {
+        showMessage("지도를 초기화하는 중 오류가 발생했습니다.", true);
+      }
+    }
+
+    function showMainUi() {
+      elements.permissionModal.classList.add("hidden");
+      elements.mainApp.classList.remove("hidden");
+      setTimeout(() => {
+        if (map) {
+          map.invalidateSize();
+        }
+      }, 0);
+    }
+
+    function handleGeoError(error) {
+      const code = error && typeof error.code === "number" ? error.code : -1;
+      let message = "위치 권한이 필요합니다.";
+      if (code === 1) {
+        message = "위치 권한이 거부되었습니다. 권한을 허용해주세요.";
+      } else if (code === 2) {
+        message = "위치 정보를 가져올 수 없습니다. 네트워크/GPS 상태를 확인해주세요.";
+      } else if (code === 3) {
+        message = "위치 요청 시간이 초과되었습니다. 다시 시도해주세요.";
+      }
+      elements.permissionError.textContent = message;
+      elements.retryLocationBtn.classList.remove("hidden");
+    }
+
+    function requestCurrentLocation() {
+      elements.permissionError.textContent = "";
+      if (!("geolocation" in navigator)) {
+        handleGeoError({ code: -1 });
+        elements.permissionError.textContent = "이 브라우저는 위치 정보를 지원하지 않습니다.";
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          if (!map) {
+            initMap(latitude, longitude);
+          } else {
+            map.setView([latitude, longitude], 18);
+            moveMarker(latitude, longitude);
+          }
+          showMainUi();
+          showMessage("현재 위치를 불러왔습니다.");
+        },
+        (error) => {
+          handleGeoError(error);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        }
+      );
+    }
+
+    function resetFormKeepLocation() {
+      elements.dataForm.reset();
+      updateCoordinateText(selectedLat, selectedLng);
+    }
+
+    function initializeEvents() {
+      elements.requestLocationBtn.addEventListener("click", requestCurrentLocation);
+      elements.retryLocationBtn.addEventListener("click", requestCurrentLocation);
+
+      elements.dataForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        try {
+          const payload = createDataObject();
+          collectedData.push(payload);
+          saveToStorage();
+          resetFormKeepLocation();
+          showMessage("데이터를 저장했습니다.");
+        } catch (error) {
+          showMessage(error.message || "저장 중 오류가 발생했습니다.", true);
+        }
+      });
+
+      document.getElementById("downloadCsvBtn").addEventListener("click", downloadCsv);
+
+      document.getElementById("clearAllBtn").addEventListener("click", () => {
+        if (!confirm("저장된 전체 데이터를 삭제할까요?")) {
+          return;
+        }
+        collectedData = [];
+        localStorage.removeItem(STORAGE_KEY);
+        elements.dataCount.textContent = "0";
+        showMessage("모든 데이터를 초기화했습니다.");
+      });
+    }
+
+    loadStoredData();
+    initializeEvents();
+  </script>
+</body>
+</html>
