@@ -77,10 +77,11 @@
 
     #map {
       width: 100%;
-      height: 300px;
+      height: clamp(260px, 42vh, 420px);
       border-radius: 12px;
       border: 1px solid var(--border);
       margin-top: 10px;
+      overflow: hidden;
     }
 
     .form-grid {
@@ -236,7 +237,7 @@
         padding: 10px;
       }
       #map {
-        height: 260px;
+        height: clamp(240px, 38vh, 320px);
       }
       .check-grid {
         grid-template-columns: 1fr;
@@ -475,10 +476,19 @@
       elements.permissionModal.classList.add("hidden");
       elements.mainApp.classList.remove("hidden");
       setTimeout(() => {
-        if (map) {
-          map.invalidateSize();
-        }
+        refreshMapSize();
       }, 0);
+    }
+
+    // 모바일 회전, 브라우저 리사이즈 시 지도가 컨테이너 크기에 맞게 다시 그려지도록 처리
+    function refreshMapSize() {
+      if (!map || !window.naver || !window.naver.maps) {
+        return;
+      }
+      naver.maps.Event.trigger(map, "resize");
+      if (selectedLat !== null && selectedLng !== null) {
+        map.setCenter(new naver.maps.LatLng(selectedLat, selectedLng));
+      }
     }
 
     function handleGeoError(error) {
@@ -535,6 +545,8 @@
     function initializeEvents() {
       elements.requestLocationBtn.addEventListener("click", requestCurrentLocation);
       elements.retryLocationBtn.addEventListener("click", requestCurrentLocation);
+      window.addEventListener("resize", refreshMapSize);
+      window.addEventListener("orientationchange", refreshMapSize);
 
       elements.dataForm.addEventListener("submit", (event) => {
         event.preventDefault();
