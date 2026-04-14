@@ -395,27 +395,6 @@
     </section>
 
     <section class="card">
-      <h2 class="title">공유 동기화 설정 (Supabase)</h2>
-      <p class="desc">한 번 연결하면 PC/모바일에서 동일 데이터가 보입니다.</p>
-      <div class="form-grid">
-        <div>
-          <label for="supabaseUrl">Supabase URL</label>
-          <input id="supabaseUrl" type="text" placeholder="https://xxxx.supabase.co" />
-        </div>
-        <div>
-          <label for="supabaseAnonKey">Supabase Anon Key</label>
-          <input id="supabaseAnonKey" type="text" placeholder="eyJhbGciOi..." />
-        </div>
-        <div class="btn-row">
-          <button id="connectSupabaseBtn" class="btn-secondary" type="button">공유 저장소 연결</button>
-          <button id="syncNowBtn" class="btn-secondary" type="button">서버에서 다시 불러오기</button>
-        </div>
-      </div>
-      <p class="small-hint">테이블명: barrier_entries, 컬럼: id(bigint, identity), data(jsonb), created_at(timestamptz)</p>
-      <p class="small-hint">동기화 상태: <span id="syncStatus">로컬 모드</span></p>
-    </section>
-
-    <section class="card">
       <h2 class="title">저장 데이터 위치 지도</h2>
       <p class="desc">저장한 데이터가 누적될수록 아래 지도의 마커 수도 함께 증가합니다.</p>
       <div id="overviewMap"></div>
@@ -427,8 +406,9 @@
   <script>
     // localStorage에 저장할 때 사용할 고정 키
     const STORAGE_KEY = "barrierFreeMapData";
-    const SUPABASE_CONFIG_KEY = "barrierFreeSupabaseConfig";
     const SUPABASE_TABLE = "barrier_entries";
+    const SUPABASE_URL = "https://ghdcjmmxfeaedsspterz.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_lvBfmbpcNmM4MJvu-lqIBQ_j2K1BHgM";
 
     // CSV 컬럼은 현재 한국어 입력 항목 중심으로 구성
     const CSV_COLUMNS = [
@@ -451,7 +431,7 @@
     let selectedLat = null;
     let selectedLng = null;
     let collectedData = [];
-    let supabaseConfig = null;
+    const supabaseConfig = { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY };
 
     const elements = {
       permissionModal: document.getElementById("permissionModal"),
@@ -463,11 +443,6 @@
       dataForm: document.getElementById("dataForm"),
       dataCount: document.getElementById("dataCount"),
       message: document.getElementById("message"),
-      supabaseUrl: document.getElementById("supabaseUrl"),
-      supabaseAnonKey: document.getElementById("supabaseAnonKey"),
-      connectSupabaseBtn: document.getElementById("connectSupabaseBtn"),
-      syncNowBtn: document.getElementById("syncNowBtn"),
-      syncStatus: document.getElementById("syncStatus"),
       markerCount: document.getElementById("markerCount"),
       btnNormal: document.getElementById("btnNormal"),
       btnSatellite: document.getElementById("btnSatellite"),
@@ -499,30 +474,6 @@
         showMessage("저장된 데이터를 읽는 중 오류가 발생했습니다.", true);
       }
       elements.dataCount.textContent = String(collectedData.length);
-    }
-
-    function loadSupabaseConfig() {
-      try {
-        const raw = localStorage.getItem(SUPABASE_CONFIG_KEY);
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        if (!parsed || !parsed.url || !parsed.anonKey) return null;
-        return parsed;
-      } catch (error) {
-        return null;
-      }
-    }
-
-    function saveSupabaseConfig(url, anonKey) {
-      supabaseConfig = { url: url.trim(), anonKey: anonKey.trim() };
-      localStorage.setItem(SUPABASE_CONFIG_KEY, JSON.stringify(supabaseConfig));
-      elements.supabaseUrl.value = supabaseConfig.url;
-      elements.supabaseAnonKey.value = supabaseConfig.anonKey;
-      elements.syncStatus.textContent = "공유 모드 연결됨";
-    }
-
-    function updateSyncStatus(text) {
-      elements.syncStatus.textContent = text;
     }
 
     function saveToStorage() {
@@ -613,10 +564,6 @@
     }
 
     async function fetchSharedData() {
-      if (!supabaseConfig) {
-        return;
-      }
-      updateSyncStatus("서버 동기화 중...");
       const rows = await supabaseRequest(
         `${SUPABASE_TABLE}?select=id,data,created_at&order=created_at.asc`,
         { method: "GET" }
@@ -624,13 +571,9 @@
       collectedData = Array.isArray(rows) ? rows.map((row) => row.data).filter(Boolean) : [];
       saveToStorage();
       renderSavedMarkers();
-      updateSyncStatus("공유 모드 연결됨");
     }
 
     async function saveSharedData(payload) {
-      if (!supabaseConfig) {
-        return;
-      }
       await supabaseRequest(SUPABASE_TABLE, {
         method: "POST",
         headers: {
@@ -641,9 +584,6 @@
     }
 
     async function clearSharedData() {
-      if (!supabaseConfig) {
-        return;
-      }
       await supabaseRequest(`${SUPABASE_TABLE}?id=gt.0`, {
         method: "DELETE"
       });
@@ -880,7 +820,7 @@
           saveToStorage();
           renderSavedMarkers();
           resetFormKeepLocation();
-          showMessage(supabaseConfig ? "공유 저장소와 로컬에 저장했습니다." : "로컬에 저장했습니다.");
+          showMessage("공유 저장소에 저장했습니다.");
         } catch (error) {
           showMessage(error.message || "저장 중 오류가 발생했습니다.", true);
         }
@@ -898,57 +838,18 @@
           localStorage.removeItem(STORAGE_KEY);
           elements.dataCount.textContent = "0";
           renderSavedMarkers();
-          showMessage(supabaseConfig ? "공유 저장소와 로컬 데이터를 초기화했습니다." : "로컬 데이터를 초기화했습니다.");
+          showMessage("공유 저장소 데이터를 초기화했습니다.");
         } catch (error) {
           showMessage(error.message || "초기화 중 오류가 발생했습니다.", true);
-        }
-      });
-
-      elements.connectSupabaseBtn.addEventListener("click", async () => {
-        const url = elements.supabaseUrl.value.trim();
-        const anonKey = elements.supabaseAnonKey.value.trim();
-        if (!url || !anonKey) {
-          showMessage("Supabase URL과 Anon Key를 입력해주세요.", true);
-          return;
-        }
-        try {
-          saveSupabaseConfig(url, anonKey);
-          await fetchSharedData();
-          showMessage("공유 저장소 연결 및 동기화가 완료되었습니다.");
-        } catch (error) {
-          updateSyncStatus("연결 실패");
-          showMessage(error.message || "공유 저장소 연결에 실패했습니다.", true);
-        }
-      });
-
-      elements.syncNowBtn.addEventListener("click", async () => {
-        if (!supabaseConfig) {
-          showMessage("먼저 공유 저장소를 연결해주세요.", true);
-          return;
-        }
-        try {
-          await fetchSharedData();
-          showMessage("서버 데이터로 다시 동기화했습니다.");
-        } catch (error) {
-          updateSyncStatus("동기화 실패");
-          showMessage(error.message || "동기화 중 오류가 발생했습니다.", true);
         }
       });
     }
 
     loadStoredData();
-    supabaseConfig = loadSupabaseConfig();
-    if (supabaseConfig) {
-      elements.supabaseUrl.value = supabaseConfig.url;
-      elements.supabaseAnonKey.value = supabaseConfig.anonKey;
-      updateSyncStatus("공유 모드 연결됨");
-    }
     initializeEvents();
-    if (supabaseConfig) {
-      fetchSharedData().catch(() => {
-        updateSyncStatus("동기화 실패");
-      });
-    }
+    fetchSharedData().catch(() => {
+      showMessage("공유 데이터 동기화에 실패했습니다. Supabase 설정을 확인해주세요.", true);
+    });
   </script>
 </body>
 </html>
