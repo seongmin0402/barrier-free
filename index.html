@@ -356,6 +356,25 @@
       background: #eef2ff;
       cursor: pointer;
     }
+    .pending-photo-item {
+      position: relative;
+      flex: 0 0 auto;
+    }
+    .pending-remove-btn {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      border-radius: 50%;
+      border: 1px solid #fff;
+      background: #dc2626;
+      color: #fff;
+      font-size: 12px;
+      line-height: 18px;
+      font-weight: 700;
+    }
     .empty-list {
       color: var(--subtle);
       font-size: 0.92rem;
@@ -473,6 +492,7 @@
             <button id="openCameraBtn" class="btn-secondary" type="button">📷 카메라로 촬영</button>
           </div>
           <p id="selectedPhotosInfo" class="small-hint">선택된 사진: 0장</p>
+          <div id="pendingPhotosPreview" class="photo-strip"></div>
         </div>
 
         <div>
@@ -583,6 +603,7 @@
     let editingRowKey = null;
     let activeInsertTargetIndex = 0;
     let pendingUploadFiles = [];
+    let pendingPreviewUrls = [];
 
     const elements = {
       permissionModal: document.getElementById("permissionModal"),
@@ -600,6 +621,7 @@
       pickPhotosBtn: document.getElementById("pickPhotosBtn"),
       openCameraBtn: document.getElementById("openCameraBtn"),
       selectedPhotosInfo: document.getElementById("selectedPhotosInfo"),
+      pendingPhotosPreview: document.getElementById("pendingPhotosPreview"),
       markerCount: document.getElementById("markerCount"),
       dataList: document.getElementById("dataList"),
       selectAllRows: document.getElementById("selectAllRows"),
@@ -662,11 +684,43 @@
           : "선택된 사진: 0장";
     }
 
+    function revokePendingPreviewUrls() {
+      pendingPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+      pendingPreviewUrls = [];
+    }
+
+    function renderPendingPhotosPreview() {
+      revokePendingPreviewUrls();
+      elements.pendingPhotosPreview.innerHTML = "";
+      if (pendingUploadFiles.length === 0) {
+        return;
+      }
+      pendingUploadFiles.forEach((file, index) => {
+        const previewUrl = URL.createObjectURL(file);
+        pendingPreviewUrls.push(previewUrl);
+        const item = document.createElement("div");
+        item.className = "pending-photo-item";
+        item.innerHTML = `
+          <img class="photo-thumb" src="${previewUrl}" alt="선택 사진 ${index + 1}" />
+          <button type="button" class="pending-remove-btn" data-remove-pending-index="${index}">×</button>
+        `;
+        elements.pendingPhotosPreview.appendChild(item);
+      });
+    }
+
+    function removePendingFileAt(index) {
+      if (index < 0 || index >= pendingUploadFiles.length) return;
+      pendingUploadFiles.splice(index, 1);
+      updateSelectedPhotosInfo();
+      renderPendingPhotosPreview();
+    }
+
     function addPendingFiles(fileList) {
       const files = Array.from(fileList || []);
       if (files.length === 0) return;
       pendingUploadFiles.push(...files);
       updateSelectedPhotosInfo();
+      renderPendingPhotosPreview();
     }
 
     function clearPendingFiles() {
@@ -674,6 +728,7 @@
       elements.galleryInput.value = "";
       elements.cameraInput.value = "";
       updateSelectedPhotosInfo();
+      renderPendingPhotosPreview();
     }
 
     function getMarkerPixelSize() {
@@ -1324,6 +1379,11 @@
       elements.cameraInput.addEventListener("change", (event) => {
         addPendingFiles(event.target.files);
         elements.cameraInput.value = "";
+      });
+      elements.pendingPhotosPreview.addEventListener("click", (event) => {
+        const removeIndex = event.target.getAttribute("data-remove-pending-index");
+        if (removeIndex === null) return;
+        removePendingFileAt(Number(removeIndex));
       });
       elements.btnNormal.addEventListener("click", () => setMapType("NORMAL"));
       elements.btnSatellite.addEventListener("click", () => setMapType("SATELLITE"));
