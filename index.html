@@ -310,6 +310,7 @@
       border-radius: 12px;
       padding: 10px;
       background: #fcfcfd;
+      box-shadow: 0 3px 10px rgba(15, 23, 42, 0.06);
     }
     .data-row-head {
       display: flex;
@@ -333,6 +334,31 @@
       color: var(--subtle);
       line-height: 1.4;
     }
+    .photo-strip {
+      margin-top: 8px;
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+    .photo-thumb {
+      width: 68px;
+      height: 68px;
+      border-radius: 10px;
+      object-fit: cover;
+      border: 1px solid var(--border);
+      flex: 0 0 auto;
+      background: #eef2ff;
+      cursor: pointer;
+    }
+    .empty-list {
+      color: var(--subtle);
+      font-size: 0.92rem;
+      padding: 10px 4px;
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      background: #fafafa;
+    }
 
     @media (max-width: 480px) {
       .app {
@@ -346,6 +372,10 @@
       }
       .check-grid {
         grid-template-columns: 1fr;
+      }
+      .photo-thumb {
+        width: 62px;
+        height: 62px;
       }
     }
   </style>
@@ -732,15 +762,28 @@
       if (!target) {
         throw new Error("활성화된 스토리지가 없습니다. SUPABASE_TARGETS를 설정해주세요.");
       }
-      const response = await fetch(`${target.url}/rest/v1/${path}`, {
-        ...options,
-        headers: {
-          "Content-Type": "application/json",
-          apikey: target.anonKey,
-          Authorization: `Bearer ${target.anonKey}`,
-          ...(options.headers || {})
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 12000);
+      let response;
+      try {
+        response = await fetch(`${target.url}/rest/v1/${path}`, {
+          ...options,
+          signal: controller.signal,
+          headers: {
+            "Content-Type": "application/json",
+            apikey: target.anonKey,
+            Authorization: `Bearer ${target.anonKey}`,
+            ...(options.headers || {})
+          }
+        });
+      } catch (error) {
+        if (error.name === "AbortError") {
+          throw new Error("공유 저장소 요청이 지연되고 있습니다. 네트워크 상태를 확인해주세요.");
         }
-      });
+        throw error;
+      } finally {
+        clearTimeout(timer);
+      }
       if (!response.ok) {
         const text = await response.text();
         throw new Error(`공유 저장소 오류: ${response.status} ${text}`);
@@ -957,16 +1000,21 @@
       moveMarker(lat, lng);
       if (map) {
         map.setCenter(new naver.maps.LatLng(lat, lng));
-        map.setZoom(18);
+        map.setZoom(20);
       }
       if (overviewMap) {
         overviewMap.setCenter(new naver.maps.LatLng(lat, lng));
+        overviewMap.setZoom(18);
       }
     }
 
     function renderDataList() {
       elements.dataList.innerHTML = "";
       elements.selectAllRows.checked = collectedRows.length > 0 && selectedRowIds.size === collectedRows.length;
+      if (collectedRows.length === 0) {
+        elements.dataList.innerHTML = `<div class="empty-list">아직 저장된 데이터가 없습니다. 지도에서 위치를 선택한 뒤 저장해보세요.</div>`;
+        return;
+      }
 
       collectedRows.forEach((row, index) => {
         const item = row.data;
@@ -989,6 +1037,21 @@
             저장시각: ${created}
           </div>
         `;
+        const images = Array.isArray(item.imageFiles) ? item.imageFiles : [];
+        if (images.length > 0) {
+          const strip = document.createElement("div");
+          strip.className = "photo-strip";
+          images.forEach((image, photoIndex) => {
+            const thumb = document.createElement("img");
+            thumb.className = "photo-thumb";
+            thumb.src = image.url;
+            thumb.alt = `업로드 사진 ${photoIndex + 1}`;
+            thumb.loading = "lazy";
+            thumb.setAttribute("data-photo-url", image.url);
+            strip.appendChild(thumb);
+          });
+          wrap.appendChild(strip);
+        }
         elements.dataList.appendChild(wrap);
       });
     }
@@ -1226,6 +1289,12 @@
       });
 
       elements.dataList.addEventListener("click", async (event) => {
+        const photoUrl = event.target.getAttribute("data-photo-url");
+        if (photoUrl) {
+          window.open(photoUrl, "_blank", "noopener,noreferrer");
+          return;
+        }
+
         const focusId = event.target.getAttribute("data-row-focus");
         if (focusId) {
           const row = collectedRows.find((item) => getRowKey(item) === focusId);
@@ -1272,6 +1341,12 @@
     renderDataList();
     initializeEvents();
     setFormModeEditing(false);
+    window.addEventListener("error", () => {
+      showMessage("일시적인 오류가 발생했습니다. 새로고침 후 다시 시도해주세요.", true);
+    });
+    window.addEventListener("unhandledrejection", () => {
+      showMessage("네트워크 요청 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.", true);
+    });
     fetchSharedData()
       .then(() => {
         showMessage("공유 모드로 실행 중입니다. 기기 간 데이터가 동기화됩니다.");
