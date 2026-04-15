@@ -338,6 +338,21 @@
       line-height: 1.4;
       word-break: break-word;
     }
+    .row-detail {
+      margin-top: 8px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #f8fafc;
+      font-size: 0.86rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.45;
+      color: #0f172a;
+    }
+    .row-detail[hidden] {
+      display: none;
+    }
     .section-title {
       margin-top: 8px;
       font-size: 0.84rem;
@@ -459,8 +474,11 @@
       .data-row-head [data-row-focus] {
         order: 3;
       }
-      .data-row-head [data-row-edit] {
+      .data-row-head [data-row-detail] {
         order: 4;
+      }
+      .data-row-head [data-row-edit] {
+        order: 5;
       }
       .mini-btn {
         padding: 7px 9px;
@@ -481,6 +499,7 @@
         width: 100%;
       }
       .data-row-head [data-row-focus],
+      .data-row-head [data-row-detail],
       .data-row-head [data-row-edit] {
         flex: 1 1 100%;
       }
@@ -904,6 +923,15 @@
       }
       const parsed = Number(value);
       return Number.isNaN(parsed) ? defaultValue : parsed;
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
     }
 
     function createDataObject() {
@@ -1415,6 +1443,7 @@
             <input type="checkbox" data-row-check="${rowKey}" ${checked} />
             <button class="mini-btn btn-secondary" type="button" data-row-focus="${rowKey}">지도에서 보기</button>
             <span class="data-row-title">데이터 #${index + 1}</span>
+            <button class="mini-btn btn-secondary" type="button" data-row-detail="${rowKey}" aria-expanded="false">상세 정보 보기</button>
             <button class="mini-btn" type="button" data-row-edit="${rowKey}">수정</button>
           </div>
           <div class="row-meta">
@@ -1425,6 +1454,7 @@
             자동문: ${item.auto_door_available ? "있음" : "없음"} / 문턱: ${item.threshold_present ? "있음" : "없음"} / 사진: ${(item.imageNames || []).length}장 / 층별 사진 그룹: ${(item.floorPhotoGroups || []).length}개<br/>
             저장시각: ${created}
           </div>
+          <div class="row-detail" data-row-detail-content="${rowKey}" hidden>${item.description ? escapeHtml(item.description) : "입력된 상세 정보가 없습니다."}</div>
         `;
         const images = Array.isArray(item.imageFiles) ? item.imageFiles : [];
         const floorGroups = Array.isArray(item.floorPhotoGroups) ? item.floorPhotoGroups : [];
@@ -1737,6 +1767,23 @@
         if (focusId) {
           const row = collectedRows.find((item) => getRowKey(item) === focusId);
           focusRowOnMaps(row);
+          return;
+        }
+
+        const detailId = event.target.getAttribute("data-row-detail");
+        if (detailId) {
+          const detailPanel = event.target.closest(".data-row")?.querySelector(`[data-row-detail-content="${detailId}"]`);
+          if (!detailPanel) return;
+          const isHidden = detailPanel.hasAttribute("hidden");
+          if (isHidden) {
+            detailPanel.removeAttribute("hidden");
+            event.target.textContent = "상세 정보 닫기";
+            event.target.setAttribute("aria-expanded", "true");
+          } else {
+            detailPanel.setAttribute("hidden", "");
+            event.target.textContent = "상세 정보 보기";
+            event.target.setAttribute("aria-expanded", "false");
+          }
           return;
         }
 
