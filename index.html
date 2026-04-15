@@ -375,6 +375,44 @@
       line-height: 18px;
       font-weight: 700;
     }
+    .inline-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: end;
+    }
+    .inline-row button {
+      width: auto;
+      min-width: 88px;
+      padding: 11px 14px;
+    }
+    .floor-photo-groups {
+      display: grid;
+      gap: 10px;
+    }
+    .floor-photo-group {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #f8fafc;
+      padding: 10px;
+    }
+    .floor-photo-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .floor-photo-title {
+      font-weight: 700;
+      font-size: 0.92rem;
+      color: #0f172a;
+    }
+    .floor-note {
+      margin-top: 6px;
+      font-size: 0.85rem;
+      color: var(--subtle);
+    }
     .empty-list {
       color: var(--subtle);
       font-size: 0.92rem;
@@ -497,7 +535,12 @@
 
         <div>
           <label for="floor">층</label>
-          <input id="floor" type="text" placeholder="예: B1, 1F, 2F" />
+          <div class="inline-row">
+            <input id="floor" type="text" placeholder="예: B1, 1F, 2F" />
+            <button id="addFloorPhotoGroupBtn" class="btn-secondary" type="button">층 추가</button>
+          </div>
+          <p class="small-hint">층을 입력한 뒤 `층 추가`를 누르면 해당 층 사진을 따로 넣을 수 있습니다.</p>
+          <div id="floorPhotoGroups" class="floor-photo-groups"></div>
         </div>
 
         <div>
@@ -610,6 +653,8 @@
     let activeInsertTargetIndex = 0;
     let pendingUploadFiles = [];
     let pendingPreviewUrls = [];
+    let pendingFloorPhotoGroups = [];
+    let floorPhotoGroupSeq = 0;
 
     const elements = {
       permissionModal: document.getElementById("permissionModal"),
@@ -628,6 +673,8 @@
       openCameraBtn: document.getElementById("openCameraBtn"),
       selectedPhotosInfo: document.getElementById("selectedPhotosInfo"),
       pendingPhotosPreview: document.getElementById("pendingPhotosPreview"),
+      addFloorPhotoGroupBtn: document.getElementById("addFloorPhotoGroupBtn"),
+      floorPhotoGroups: document.getElementById("floorPhotoGroups"),
       markerCount: document.getElementById("markerCount"),
       dataList: document.getElementById("dataList"),
       selectAllRows: document.getElementById("selectAllRows"),
@@ -737,6 +784,158 @@
       renderPendingPhotosPreview();
     }
 
+    function createFloorPhotoGroup(floor, existingFiles = []) {
+      floorPhotoGroupSeq += 1;
+      return {
+        id: `floor-group-${floorPhotoGroupSeq}`,
+        floor,
+        existingFiles: Array.isArray(existingFiles) ? [...existingFiles] : [],
+        newFiles: []
+      };
+    }
+
+    function getFloorPhotoGroup(groupId) {
+      return pendingFloorPhotoGroups.find((group) => group.id === groupId);
+    }
+
+    function addFloorPhotoGroup() {
+      const floorValue = document.getElementById("floor").value.trim();
+      if (!floorValue) {
+        showMessage("층을 먼저 입력한 뒤 '층 추가'를 눌러주세요.", true);
+        return;
+      }
+      const duplicated = pendingFloorPhotoGroups.find((group) => group.floor === floorValue);
+      if (duplicated) {
+        showMessage(`${floorValue} 층은 이미 추가되어 있습니다.`);
+        return;
+      }
+      pendingFloorPhotoGroups.push(createFloorPhotoGroup(floorValue));
+      renderFloorPhotoGroups();
+      showMessage(`${floorValue} 층 사진 입력 칸이 추가되었습니다.`);
+    }
+
+    function removeFloorPhotoGroup(groupId) {
+      pendingFloorPhotoGroups = pendingFloorPhotoGroups.filter((group) => group.id !== groupId);
+      renderFloorPhotoGroups();
+    }
+
+    function removeFloorGroupNewFile(groupId, fileIndex) {
+      const group = getFloorPhotoGroup(groupId);
+      if (!group) return;
+      if (fileIndex < 0 || fileIndex >= group.newFiles.length) return;
+      group.newFiles.splice(fileIndex, 1);
+      renderFloorPhotoGroups();
+    }
+
+    function appendFilesToFloorGroup(groupId, fileList) {
+      const group = getFloorPhotoGroup(groupId);
+      if (!group) return;
+      const files = Array.from(fileList || []);
+      if (files.length === 0) return;
+      group.newFiles.push(...files);
+      renderFloorPhotoGroups();
+    }
+
+    function openFloorPhotoPicker(groupId, source) {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.multiple = source !== "camera";
+      if (source === "camera") {
+        input.setAttribute("capture", "environment");
+      }
+      input.addEventListener("change", (event) => {
+        appendFilesToFloorGroup(groupId, event.target.files);
+      });
+      input.click();
+    }
+
+    function clearFloorPhotoGroups() {
+      pendingFloorPhotoGroups = [];
+      elements.floorPhotoGroups.innerHTML = "";
+    }
+
+    function renderFloorPhotoGroups() {
+      elements.floorPhotoGroups.innerHTML = "";
+      if (pendingFloorPhotoGroups.length === 0) {
+        return;
+      }
+      pendingFloorPhotoGroups.forEach((group) => {
+        const wrap = document.createElement("div");
+        wrap.className = "floor-photo-group";
+        const totalCount = group.existingFiles.length + group.newFiles.length;
+        wrap.innerHTML = `
+          <div class="floor-photo-head">
+            <span class="floor-photo-title">${group.floor} 사진 (${totalCount}장)</span>
+            <button type="button" class="mini-btn btn-danger" data-floor-group-remove="${group.id}">층 삭제</button>
+          </div>
+          <div class="btn-row">
+            <button type="button" class="btn-secondary mini-btn" data-floor-group-pick="${group.id}">저장된 사진 선택</button>
+            <button type="button" class="btn-secondary mini-btn" data-floor-group-camera="${group.id}">📷 카메라로 촬영</button>
+          </div>
+          <div class="photo-strip" data-floor-group-preview="${group.id}"></div>
+          <p class="floor-note">기존 사진은 유지되며 새로 추가한 사진만 삭제할 수 있습니다.</p>
+        `;
+        const preview = wrap.querySelector(`[data-floor-group-preview="${group.id}"]`);
+        group.existingFiles.forEach((image, index) => {
+          const thumb = document.createElement("img");
+          thumb.className = "photo-thumb";
+          thumb.src = image.url;
+          thumb.alt = `${group.floor} 기존 사진 ${index + 1}`;
+          thumb.loading = "lazy";
+          thumb.setAttribute("data-photo-url", image.url);
+          preview.appendChild(thumb);
+        });
+        group.newFiles.forEach((file, fileIndex) => {
+          const previewUrl = URL.createObjectURL(file);
+          const item = document.createElement("div");
+          item.className = "pending-photo-item";
+          item.innerHTML = `
+            <img class="photo-thumb" src="${previewUrl}" alt="${group.floor} 새 사진 ${fileIndex + 1}" />
+            <button type="button" class="pending-remove-btn" data-floor-group-remove-file="${group.id}" data-floor-group-remove-file-index="${fileIndex}">×</button>
+          `;
+          preview.appendChild(item);
+          item.querySelector("img").addEventListener("load", () => URL.revokeObjectURL(previewUrl));
+          item.querySelector("img").addEventListener("error", () => URL.revokeObjectURL(previewUrl));
+        });
+        elements.floorPhotoGroups.appendChild(wrap);
+      });
+    }
+
+    function buildImageFields(ungroupedImages, floorPhotoGroups) {
+      const groupedImages = floorPhotoGroups.flatMap((group) => group.imageFiles || []);
+      const imageFiles = [...ungroupedImages, ...groupedImages];
+      return {
+        imageFiles,
+        imageNames: imageFiles.map((file) => file.name)
+      };
+    }
+
+    function getUngroupedImagesFromRowData(data) {
+      const all = Array.isArray(data?.imageFiles) ? data.imageFiles : [];
+      const grouped = Array.isArray(data?.floorPhotoGroups)
+        ? data.floorPhotoGroups.flatMap((group) => group.imageFiles || [])
+        : [];
+      const groupedKeys = new Set(grouped.map((file) => `${file.bucket || ""}:${file.path || file.url || file.name || ""}`));
+      return all.filter((file) => !groupedKeys.has(`${file.bucket || ""}:${file.path || file.url || file.name || ""}`));
+    }
+
+    async function uploadFloorPhotoGroupsFromState() {
+      const uploadedGroups = [];
+      for (const group of pendingFloorPhotoGroups) {
+        const uploadedNewFiles = group.newFiles.length > 0
+          ? await uploadFilesToSupabaseStorage(group.newFiles)
+          : [];
+        const imageFiles = [...group.existingFiles, ...uploadedNewFiles];
+        uploadedGroups.push({
+          floor: group.floor,
+          imageFiles,
+          imageNames: imageFiles.map((file) => file.name)
+        });
+      }
+      return uploadedGroups;
+    }
+
     function getMarkerPixelSize() {
       if (window.innerWidth <= 480) return 16;
       if (window.innerWidth <= 768) return 20;
@@ -780,6 +979,7 @@
         parking_distance_entrance_m: parseNumberOrDefault(document.getElementById("parking_distance_entrance_m").value, 0),
         ramp_available: document.getElementById("ramp_available").checked,
         description: document.getElementById("description").value.trim(),
+        floorPhotoGroups: [],
         imageNames: pendingUploadFiles.map((file) => file.name),
         imageFiles: []
       };
@@ -802,6 +1002,10 @@
       document.getElementById("parking_capacity").value = data.parking_capacity ?? 0;
       document.getElementById("parking_distance_entrance_m").value = data.parking_distance_entrance_m ?? 0;
       document.getElementById("description").value = data.description || "";
+      pendingFloorPhotoGroups = Array.isArray(data.floorPhotoGroups)
+        ? data.floorPhotoGroups.map((group) => createFloorPhotoGroup(group.floor || "-", group.imageFiles || []))
+        : [];
+      renderFloorPhotoGroups();
       if (typeof data.lat === "number" && typeof data.lng === "number") {
         moveMarker(data.lat, data.lng);
         if (map) map.setCenter(new naver.maps.LatLng(data.lat, data.lng));
@@ -1197,7 +1401,7 @@
             좌표: ${item.lat?.toFixed ? item.lat.toFixed(6) : item.lat}, ${item.lng?.toFixed ? item.lng.toFixed(6) : item.lng}<br/>
             층: ${item.floor || "-"}<br/>
             주차장: ${item.parking_capacity ?? 0}대 / 입구까지 거리: ${item.parking_distance_entrance_m ?? 0}m / 경사로: ${item.ramp_available ? "있음" : "없음"}<br/>
-            자동문: ${item.auto_door_available ? "있음" : "없음"} / 문턱: ${item.threshold_present ? "있음" : "없음"} / 사진: ${(item.imageNames || []).length}장<br/>
+            자동문: ${item.auto_door_available ? "있음" : "없음"} / 문턱: ${item.threshold_present ? "있음" : "없음"} / 사진: ${(item.imageNames || []).length}장 / 층별 사진 그룹: ${(item.floorPhotoGroups || []).length}개<br/>
             저장시각: ${created}
           </div>
         `;
@@ -1372,6 +1576,7 @@
       updateCoordinateText(selectedLat, selectedLng);
       editingRowKey = null;
       clearPendingFiles();
+      clearFloorPhotoGroups();
       setFormModeEditing(false);
     }
 
@@ -1381,6 +1586,7 @@
       elements.startWithoutLocationBtn.addEventListener("click", startWithoutLocation);
       elements.pickPhotosBtn.addEventListener("click", () => elements.galleryInput.click());
       elements.openCameraBtn.addEventListener("click", () => elements.cameraInput.click());
+      elements.addFloorPhotoGroupBtn.addEventListener("click", addFloorPhotoGroup);
       elements.galleryInput.addEventListener("change", (event) => {
         addPendingFiles(event.target.files);
         elements.galleryInput.value = "";
@@ -1394,6 +1600,28 @@
         if (removeIndex === null) return;
         removePendingFileAt(Number(removeIndex));
       });
+      elements.floorPhotoGroups.addEventListener("click", (event) => {
+        const removeGroupId = event.target.getAttribute("data-floor-group-remove");
+        if (removeGroupId) {
+          removeFloorPhotoGroup(removeGroupId);
+          return;
+        }
+        const pickGroupId = event.target.getAttribute("data-floor-group-pick");
+        if (pickGroupId) {
+          openFloorPhotoPicker(pickGroupId, "gallery");
+          return;
+        }
+        const cameraGroupId = event.target.getAttribute("data-floor-group-camera");
+        if (cameraGroupId) {
+          openFloorPhotoPicker(cameraGroupId, "camera");
+          return;
+        }
+        const removeFileGroupId = event.target.getAttribute("data-floor-group-remove-file");
+        if (removeFileGroupId) {
+          const removeFileIndex = Number(event.target.getAttribute("data-floor-group-remove-file-index"));
+          removeFloorGroupNewFile(removeFileGroupId, removeFileIndex);
+        }
+      });
       elements.btnNormal.addEventListener("click", () => setMapType("NORMAL"));
       elements.btnSatellite.addEventListener("click", () => setMapType("SATELLITE"));
       elements.locateMeBtn.addEventListener("click", moveToCurrentLocation);
@@ -1405,20 +1633,16 @@
         try {
           const payload = createDataObject();
           const files = [...pendingUploadFiles];
+          const floorPhotoGroups = await uploadFloorPhotoGroupsFromState();
           if (editingRowKey) {
             const targetRow = collectedRows.find((row) => getRowKey(row) === editingRowKey);
-            const existingImageFiles = targetRow?.data?.imageFiles || [];
-            if (files.length > 0) {
-              const appendedFiles = await uploadFilesToSupabaseStorage(files);
-              payload.imageFiles = [...existingImageFiles, ...appendedFiles];
-              payload.imageNames = payload.imageFiles.map((file) => file.name);
-            } else {
-              payload.imageFiles = existingImageFiles;
-              payload.imageNames = existingImageFiles.map((file) => file.name);
-            }
             if (!targetRow) {
               throw new Error("수정할 데이터를 찾지 못했습니다. 목록을 다시 불러와주세요.");
             }
+            const ungroupedImages = getUngroupedImagesFromRowData(targetRow.data);
+            const appendedFiles = files.length > 0 ? await uploadFilesToSupabaseStorage(files) : [];
+            payload.floorPhotoGroups = floorPhotoGroups;
+            Object.assign(payload, buildImageFields([...ungroupedImages, ...appendedFiles], floorPhotoGroups));
             await saveEditedRow(targetRow, payload);
             saveToStorage();
             renderSavedMarkers();
@@ -1428,10 +1652,9 @@
             return;
           }
 
-          if (files.length > 0) {
-            payload.imageFiles = await uploadFilesToSupabaseStorage(files);
-            payload.imageNames = payload.imageFiles.map((file) => file.name);
-          }
+          const uploadedUngroupedImages = files.length > 0 ? await uploadFilesToSupabaseStorage(files) : [];
+          payload.floorPhotoGroups = floorPhotoGroups;
+          Object.assign(payload, buildImageFields(uploadedUngroupedImages, floorPhotoGroups));
           const inserted = await insertSharedRow(payload);
           if (inserted && inserted.id) {
             collectedRows.push(inserted);
