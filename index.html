@@ -646,6 +646,7 @@
       "description",
       "floorPhotoSummary",
       "floorPhotoImageNames",
+      "floorPhotoGroupsJson",
       "imageNames"
     ];
 
@@ -1063,7 +1064,9 @@
       return {
         ...row,
         floorPhotoSummary: buildFloorPhotoSummary(floorPhotoGroups),
-        floorPhotoImageNames: buildFloorPhotoImageNames(floorPhotoGroups)
+        floorPhotoImageNames: buildFloorPhotoImageNames(floorPhotoGroups),
+        // CSV 파싱 안정화를 위해 층별 사진 구조를 JSON 문자열로도 함께 내보냄
+        floorPhotoGroupsJson: JSON.stringify(floorPhotoGroups)
       };
     }
 
