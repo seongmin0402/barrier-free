@@ -338,6 +338,12 @@
       line-height: 1.4;
       word-break: break-word;
     }
+    .section-title {
+      margin-top: 8px;
+      font-size: 0.84rem;
+      color: #334155;
+      font-weight: 700;
+    }
     .photo-strip {
       margin-top: 8px;
       display: flex;
@@ -638,6 +644,8 @@
       "parking_distance_entrance_m",
       "ramp_available",
       "description",
+      "floorPhotoSummary",
+      "floorPhotoImageNames",
       "imageNames"
     ];
 
@@ -1022,9 +1030,48 @@
       return `"${str.replace(/"/g, "\"\"")}"`;
     }
 
+    function buildFloorPhotoSummary(floorPhotoGroups) {
+      if (!Array.isArray(floorPhotoGroups) || floorPhotoGroups.length === 0) {
+        return "";
+      }
+      return floorPhotoGroups
+        .map((group) => {
+          const floorLabel = group?.floor || "-";
+          const count = Array.isArray(group?.imageFiles) ? group.imageFiles.length : 0;
+          return `${floorLabel}:${count}장`;
+        })
+        .join(" | ");
+    }
+
+    function buildFloorPhotoImageNames(floorPhotoGroups) {
+      if (!Array.isArray(floorPhotoGroups) || floorPhotoGroups.length === 0) {
+        return "";
+      }
+      return floorPhotoGroups
+        .map((group) => {
+          const floorLabel = group?.floor || "-";
+          const names = Array.isArray(group?.imageFiles)
+            ? group.imageFiles.map((file) => file.originalName || file.name || "image").join("+")
+            : "";
+          return `${floorLabel}[${names}]`;
+        })
+        .join(" | ");
+    }
+
+    function toCsvRow(row) {
+      const floorPhotoGroups = Array.isArray(row?.floorPhotoGroups) ? row.floorPhotoGroups : [];
+      return {
+        ...row,
+        floorPhotoSummary: buildFloorPhotoSummary(floorPhotoGroups),
+        floorPhotoImageNames: buildFloorPhotoImageNames(floorPhotoGroups)
+      };
+    }
+
     function buildCsvText(dataRows) {
       const header = CSV_COLUMNS.join(",");
-      const body = dataRows.map((row) => CSV_COLUMNS.map((column) => csvEscape(row[column])).join(","));
+      const body = dataRows
+        .map((row) => toCsvRow(row))
+        .map((row) => CSV_COLUMNS.map((column) => csvEscape(row[column])).join(","));
       return [header, ...body].join("\n");
     }
 
@@ -1239,15 +1286,45 @@
         return;
       }
       const zip = new JSZip();
-      const imageFolder = zip.folder("images");
-      for (let index = 0; index < allImages.length; index += 1) {
-        const image = allImages[index];
-        if (!image?.url) continue;
-        const response = await fetch(image.url);
-        if (!response.ok) continue;
-        const blob = await response.blob();
-        const filename = image.name || `photo_${index + 1}.jpg`;
-        imageFolder.file(filename, blob);
+      for (let rowIndex = 0; rowIndex < collectedRows.length; rowIndex += 1) {
+        const row = collectedRows[rowIndex];
+        const rowFolder = zip.folder(`data_${rowIndex + 1}`);
+        if (!rowFolder) continue;
+
+        const floorGroups = Array.isArray(row.data?.floorPhotoGroups) ? row.data.floorPhotoGroups : [];
+        const groupedKeys = new Set(
+          floorGroups.flatMap((group) => (group.imageFiles || [])).map((file) => `${file.bucket || ""}:${file.path || file.url || file.name || ""}`)
+        );
+        const ungroupedImages = (row.data?.imageFiles || []).filter(
+          (file) => !groupedKeys.has(`${file.bucket || ""}:${file.path || file.url || file.name || ""}`)
+        );
+
+        const commonFolder = rowFolder.folder("common");
+        for (let i = 0; i < ungroupedImages.length; i += 1) {
+          const image = ungroupedImages[i];
+          if (!image?.url) continue;
+          const response = await fetch(image.url);
+          if (!response.ok) continue;
+          const blob = await response.blob();
+          const filename = image.name || `photo_${i + 1}.jpg`;
+          commonFolder.file(filename, blob);
+        }
+
+        for (let g = 0; g < floorGroups.length; g += 1) {
+          const group = floorGroups[g];
+          const safeFloorName = String(group.floor || `floor_${g + 1}`).replace(/[\\/:*?"<>|]/g, "_");
+          const floorFolder = rowFolder.folder(safeFloorName);
+          const floorImages = Array.isArray(group.imageFiles) ? group.imageFiles : [];
+          for (let f = 0; f < floorImages.length; f += 1) {
+            const image = floorImages[f];
+            if (!image?.url) continue;
+            const response = await fetch(image.url);
+            if (!response.ok) continue;
+            const blob = await response.blob();
+            const filename = image.name || `photo_${f + 1}.jpg`;
+            floorFolder.file(filename, blob);
+          }
+        }
       }
       const blob = await zip.generateAsync({ type: "blob" });
       const url = URL.createObjectURL(blob);
@@ -1406,10 +1483,19 @@
           </div>
         `;
         const images = Array.isArray(item.imageFiles) ? item.imageFiles : [];
-        if (images.length > 0) {
+        const floorGroups = Array.isArray(item.floorPhotoGroups) ? item.floorPhotoGroups : [];
+        const groupedKeys = new Set(
+          floorGroups.flatMap((group) => (group.imageFiles || [])).map((file) => `${file.bucket || ""}:${file.path || file.url || file.name || ""}`)
+        );
+        const ungroupedImages = images.filter((image) => !groupedKeys.has(`${image.bucket || ""}:${image.path || image.url || image.name || ""}`));
+        if (ungroupedImages.length > 0) {
+          const title = document.createElement("div");
+          title.className = "section-title";
+          title.textContent = "공통 사진";
+          wrap.appendChild(title);
           const strip = document.createElement("div");
           strip.className = "photo-strip";
-          images.forEach((image, photoIndex) => {
+          ungroupedImages.forEach((image, photoIndex) => {
             const thumb = document.createElement("img");
             thumb.className = "photo-thumb";
             thumb.src = image.url;
@@ -1420,6 +1506,26 @@
           });
           wrap.appendChild(strip);
         }
+        floorGroups.forEach((group) => {
+          const floorImages = Array.isArray(group.imageFiles) ? group.imageFiles : [];
+          if (floorImages.length === 0) return;
+          const title = document.createElement("div");
+          title.className = "section-title";
+          title.textContent = `${group.floor || "-"} 사진`;
+          wrap.appendChild(title);
+          const strip = document.createElement("div");
+          strip.className = "photo-strip";
+          floorImages.forEach((image, photoIndex) => {
+            const thumb = document.createElement("img");
+            thumb.className = "photo-thumb";
+            thumb.src = image.url;
+            thumb.alt = `${group.floor || "-"} 사진 ${photoIndex + 1}`;
+            thumb.loading = "lazy";
+            thumb.setAttribute("data-photo-url", image.url);
+            strip.appendChild(thumb);
+          });
+          wrap.appendChild(strip);
+        });
         elements.dataList.appendChild(wrap);
       });
     }
