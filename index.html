@@ -496,6 +496,11 @@
         </div>
 
         <div>
+          <label for="floor">층</label>
+          <input id="floor" type="text" placeholder="예: B1, 1F, 2F" />
+        </div>
+
+        <div>
           <label>접근성 체크 항목</label>
           <div class="check-grid">
             <label class="check-item"><input type="checkbox" id="wheelchair_access" />1. 휠체어 진입 가능여부</label>
@@ -579,6 +584,7 @@
     const CSV_COLUMNS = [
       "lat",
       "lng",
+      "floor",
       "wheelchair_access",
       "elevator_available",
       "braille_available",
@@ -763,6 +769,7 @@
       return {
         lat: selectedLat,
         lng: selectedLng,
+        floor: document.getElementById("floor").value.trim(),
         wheelchair_access: document.getElementById("wheelchair_access").checked,
         elevator_available: document.getElementById("elevator_available").checked,
         braille_available: document.getElementById("braille_available").checked,
@@ -784,6 +791,7 @@
     }
 
     function fillFormFromData(data) {
+      document.getElementById("floor").value = data.floor || "";
       document.getElementById("wheelchair_access").checked = !!data.wheelchair_access;
       document.getElementById("elevator_available").checked = !!data.elevator_available;
       document.getElementById("braille_available").checked = !!data.braille_available;
@@ -1187,6 +1195,7 @@
           </div>
           <div class="row-meta">
             좌표: ${item.lat?.toFixed ? item.lat.toFixed(6) : item.lat}, ${item.lng?.toFixed ? item.lng.toFixed(6) : item.lng}<br/>
+            층: ${item.floor || "-"}<br/>
             주차장: ${item.parking_capacity ?? 0}대 / 입구까지 거리: ${item.parking_distance_entrance_m ?? 0}m / 경사로: ${item.ramp_available ? "있음" : "없음"}<br/>
             자동문: ${item.auto_door_available ? "있음" : "없음"} / 문턱: ${item.threshold_present ? "있음" : "없음"} / 사진: ${(item.imageNames || []).length}장<br/>
             저장시각: ${created}
