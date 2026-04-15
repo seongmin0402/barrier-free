@@ -528,15 +528,8 @@
     <section class="card">
       <form id="dataForm" class="form-grid">
         <div>
-          <label for="images">사진 업로드 (여러 장 가능)</label>
-          <input id="galleryInput" type="file" accept="image/*" multiple class="hidden" />
-          <input id="cameraInput" type="file" accept="image/*" capture="environment" class="hidden" />
-          <div class="btn-row" style="margin-top:6px;">
-            <button id="pickPhotosBtn" class="btn-secondary" type="button">저장된 사진 선택</button>
-            <button id="openCameraBtn" class="btn-secondary" type="button">📷 카메라로 촬영</button>
-          </div>
-          <p id="selectedPhotosInfo" class="small-hint">선택된 사진: 0장</p>
-          <div id="pendingPhotosPreview" class="photo-strip"></div>
+          <label for="building_name">건물명</label>
+          <input id="building_name" type="text" placeholder="예: 공학관, 학생회관" />
         </div>
 
         <div>
@@ -633,6 +626,7 @@
     const CSV_COLUMNS = [
       "lat",
       "lng",
+      "building_name",
       "floor",
       "wheelchair_access",
       "elevator_available",
@@ -676,12 +670,6 @@
       dataForm: document.getElementById("dataForm"),
       dataCount: document.getElementById("dataCount"),
       message: document.getElementById("message"),
-      galleryInput: document.getElementById("galleryInput"),
-      cameraInput: document.getElementById("cameraInput"),
-      pickPhotosBtn: document.getElementById("pickPhotosBtn"),
-      openCameraBtn: document.getElementById("openCameraBtn"),
-      selectedPhotosInfo: document.getElementById("selectedPhotosInfo"),
-      pendingPhotosPreview: document.getElementById("pendingPhotosPreview"),
       addFloorPhotoGroupBtn: document.getElementById("addFloorPhotoGroupBtn"),
       floorPhotoGroups: document.getElementById("floorPhotoGroups"),
       markerCount: document.getElementById("markerCount"),
@@ -737,60 +725,10 @@
       return `${row._targetId || "primary"}:${row.id}`;
     }
 
-    function updateSelectedPhotosInfo() {
-      const names = pendingUploadFiles.map((file) => file.name).slice(0, 3).join(", ");
-      const suffix = pendingUploadFiles.length > 3 ? ` 외 ${pendingUploadFiles.length - 3}장` : "";
-      elements.selectedPhotosInfo.textContent =
-        pendingUploadFiles.length > 0
-          ? `선택된 사진: ${pendingUploadFiles.length}장 (${names}${suffix})`
-          : "선택된 사진: 0장";
-    }
-
-    function revokePendingPreviewUrls() {
-      pendingPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
-      pendingPreviewUrls = [];
-    }
-
-    function renderPendingPhotosPreview() {
-      revokePendingPreviewUrls();
-      elements.pendingPhotosPreview.innerHTML = "";
-      if (pendingUploadFiles.length === 0) {
-        return;
-      }
-      pendingUploadFiles.forEach((file, index) => {
-        const previewUrl = URL.createObjectURL(file);
-        pendingPreviewUrls.push(previewUrl);
-        const item = document.createElement("div");
-        item.className = "pending-photo-item";
-        item.innerHTML = `
-          <img class="photo-thumb" src="${previewUrl}" alt="선택 사진 ${index + 1}" />
-          <button type="button" class="pending-remove-btn" data-remove-pending-index="${index}">×</button>
-        `;
-        elements.pendingPhotosPreview.appendChild(item);
-      });
-    }
-
-    function removePendingFileAt(index) {
-      if (index < 0 || index >= pendingUploadFiles.length) return;
-      pendingUploadFiles.splice(index, 1);
-      updateSelectedPhotosInfo();
-      renderPendingPhotosPreview();
-    }
-
-    function addPendingFiles(fileList) {
-      const files = Array.from(fileList || []);
-      if (files.length === 0) return;
-      pendingUploadFiles.push(...files);
-      updateSelectedPhotosInfo();
-      renderPendingPhotosPreview();
-    }
-
     function clearPendingFiles() {
       pendingUploadFiles = [];
-      elements.galleryInput.value = "";
-      elements.cameraInput.value = "";
-      updateSelectedPhotosInfo();
-      renderPendingPhotosPreview();
+      pendingPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+      pendingPreviewUrls = [];
     }
 
     function createFloorPhotoGroup(floor, existingFiles = []) {
@@ -977,6 +915,7 @@
       return {
         lat: selectedLat,
         lng: selectedLng,
+        building_name: document.getElementById("building_name").value.trim(),
         floor: document.getElementById("floor").value.trim(),
         wheelchair_access: document.getElementById("wheelchair_access").checked,
         elevator_available: document.getElementById("elevator_available").checked,
@@ -1000,6 +939,7 @@
     }
 
     function fillFormFromData(data) {
+      document.getElementById("building_name").value = data.building_name || "";
       document.getElementById("floor").value = data.floor || "";
       document.getElementById("wheelchair_access").checked = !!data.wheelchair_access;
       document.getElementById("elevator_available").checked = !!data.elevator_available;
@@ -1478,6 +1418,7 @@
             <button class="mini-btn" type="button" data-row-edit="${rowKey}">수정</button>
           </div>
           <div class="row-meta">
+            건물명: ${item.building_name || "-"}<br/>
             좌표: ${item.lat?.toFixed ? item.lat.toFixed(6) : item.lat}, ${item.lng?.toFixed ? item.lng.toFixed(6) : item.lng}<br/>
             층: ${item.floor || "-"}<br/>
             주차장: ${item.parking_capacity ?? 0}대 / 입구까지 거리: ${item.parking_distance_entrance_m ?? 0}m / 경사로: ${item.ramp_available ? "있음" : "없음"}<br/>
@@ -1693,22 +1634,7 @@
       elements.requestLocationBtn.addEventListener("click", requestCurrentLocation);
       elements.retryLocationBtn.addEventListener("click", requestCurrentLocation);
       elements.startWithoutLocationBtn.addEventListener("click", startWithoutLocation);
-      elements.pickPhotosBtn.addEventListener("click", () => elements.galleryInput.click());
-      elements.openCameraBtn.addEventListener("click", () => elements.cameraInput.click());
       elements.addFloorPhotoGroupBtn.addEventListener("click", addFloorPhotoGroup);
-      elements.galleryInput.addEventListener("change", (event) => {
-        addPendingFiles(event.target.files);
-        elements.galleryInput.value = "";
-      });
-      elements.cameraInput.addEventListener("change", (event) => {
-        addPendingFiles(event.target.files);
-        elements.cameraInput.value = "";
-      });
-      elements.pendingPhotosPreview.addEventListener("click", (event) => {
-        const removeIndex = event.target.getAttribute("data-remove-pending-index");
-        if (removeIndex === null) return;
-        removePendingFileAt(Number(removeIndex));
-      });
       elements.floorPhotoGroups.addEventListener("click", (event) => {
         const removeGroupId = event.target.getAttribute("data-floor-group-remove");
         if (removeGroupId) {
@@ -1853,7 +1779,6 @@
     renderDataList();
     initializeEvents();
     setFormModeEditing(false);
-    updateSelectedPhotosInfo();
     window.addEventListener("error", () => {
       showMessage("일시적인 오류가 발생했습니다. 새로고침 후 다시 시도해주세요.", true);
     });
