@@ -1478,12 +1478,12 @@
         const checked = selectedRowIds.has(rowKey) ? "checked" : "";
         const created = row.created_at ? new Date(row.created_at).toLocaleString() : "-";
         const floorGroups = Array.isArray(item.floorPhotoGroups) ? item.floorPhotoGroups : [];
-        const floorPhotoTotalCount = floorGroups.reduce(
-          (sum, group) => sum + (Array.isArray(group.imageFiles) ? group.imageFiles.length : 0),
-          0
-        );
-        const commonPhotoCount = Array.isArray(item.imageNames) ? item.imageNames.length : 0;
-        const totalPhotoCount = commonPhotoCount + floorPhotoTotalCount;
+        const totalPhotoCount = Array.isArray(item.imageFiles)
+          ? item.imageFiles.length
+          : floorGroups.reduce(
+              (sum, group) => sum + (Array.isArray(group.imageFiles) ? group.imageFiles.length : 0),
+              0
+            );
         const detailHtml = `
           <div class="section-title">기본 정보</div>
           <div class="row-meta">
