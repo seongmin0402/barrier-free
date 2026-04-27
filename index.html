@@ -1477,6 +1477,13 @@
         const rowKey = getRowKey(row);
         const checked = selectedRowIds.has(rowKey) ? "checked" : "";
         const created = row.created_at ? new Date(row.created_at).toLocaleString() : "-";
+        const floorGroups = Array.isArray(item.floorPhotoGroups) ? item.floorPhotoGroups : [];
+        const floorPhotoTotalCount = floorGroups.reduce(
+          (sum, group) => sum + (Array.isArray(group.imageFiles) ? group.imageFiles.length : 0),
+          0
+        );
+        const commonPhotoCount = Array.isArray(item.imageNames) ? item.imageNames.length : 0;
+        const totalPhotoCount = commonPhotoCount + floorPhotoTotalCount;
         const detailHtml = `
           <div class="section-title">기본 정보</div>
           <div class="row-meta">
@@ -1486,7 +1493,7 @@
             주차장: ${item.parking_capacity ?? 0}대 / 입구까지 거리: ${item.parking_distance_entrance_m ?? 0}m<br/>
             경사로: ${item.ramp_available ? "있음" : "없음"} / 자동문: ${item.auto_door_available ? "있음" : "없음"} / 문턱: ${item.threshold_present ? "있음" : "없음"}<br/>
             휠체어 진입: ${item.wheelchair_access ? "가능" : "불가"} / 장애인 승강기: ${item.elevator_available ? "있음" : "없음"} / 점자 표기: ${item.braille_available ? "있음" : "없음"} / 장애인 화장실: ${item.toilet_available ? "있음" : "없음"}<br/>
-            공통 사진: ${(item.imageNames || []).length}장 / 층별 사진 그룹: ${(item.floorPhotoGroups || []).length}개<br/>
+            전체 사진: ${totalPhotoCount}장<br/>
             저장시각: ${created}
           </div>
           <div class="section-title">상세 설명</div>
@@ -1503,7 +1510,6 @@
           <div class="row-detail" data-row-detail-content="${rowKey}" hidden>${detailHtml}</div>
         `;
         const images = Array.isArray(item.imageFiles) ? item.imageFiles : [];
-        const floorGroups = Array.isArray(item.floorPhotoGroups) ? item.floorPhotoGroups : [];
         const groupedKeys = new Set(
           floorGroups.flatMap((group) => (group.imageFiles || [])).map((file) => `${file.bucket || ""}:${file.path || file.url || file.name || ""}`)
         );
