@@ -442,6 +442,19 @@
       border-radius: 10px;
       background: #fafafa;
     }
+    .list-tools {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .search-input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 0.95rem;
+      background: #fff;
+    }
 
     @media (max-width: 480px) {
       .app {
@@ -609,9 +622,12 @@
 
     <section class="card">
       <h2 class="title">누적 데이터 목록</h2>
-      <div class="check-item" style="margin-bottom:10px;">
-        <input type="checkbox" id="selectAllRows" />
-        <span>전체 선택</span>
+      <div class="list-tools">
+        <input id="buildingSearchInput" class="search-input" type="text" placeholder="건물명 검색 (예: 공학관)" />
+        <div class="check-item" style="margin-bottom:0;">
+          <input type="checkbox" id="selectAllRows" />
+          <span>현재 목록 전체 선택</span>
+        </div>
       </div>
       <div id="dataList" class="form-grid"></div>
       <div class="btn-row" style="margin-top:12px;">
@@ -677,6 +693,7 @@
     let pendingPreviewUrls = [];
     let pendingFloorPhotoGroups = [];
     let floorPhotoGroupSeq = 0;
+    let buildingSearchKeyword = "";
 
     const elements = {
       permissionModal: document.getElementById("permissionModal"),
@@ -693,6 +710,7 @@
       floorPhotoGroups: document.getElementById("floorPhotoGroups"),
       markerCount: document.getElementById("markerCount"),
       dataList: document.getElementById("dataList"),
+      buildingSearchInput: document.getElementById("buildingSearchInput"),
       selectAllRows: document.getElementById("selectAllRows"),
       deleteSelectedBtn: document.getElementById("deleteSelectedBtn"),
       btnNormal: document.getElementById("btnNormal"),
@@ -1422,15 +1440,36 @@
       }
     }
 
+    function getFilteredRows() {
+      const keyword = buildingSearchKeyword.trim().toLowerCase();
+      if (!keyword) {
+        return collectedRows.map((row, index) => ({ row, originalIndex: index }));
+      }
+      return collectedRows
+        .map((row, index) => ({ row, originalIndex: index }))
+        .filter(({ row }) => {
+          const name = String(row?.data?.building_name || "").toLowerCase();
+          return name.includes(keyword);
+        });
+    }
+
     function renderDataList() {
       elements.dataList.innerHTML = "";
-      elements.selectAllRows.checked = collectedRows.length > 0 && selectedRowIds.size === collectedRows.length;
+      const filteredRows = getFilteredRows();
+      const filteredRowKeys = filteredRows.map(({ row }) => getRowKey(row));
+      const selectedCountInFiltered = filteredRowKeys.filter((rowKey) => selectedRowIds.has(rowKey)).length;
+      elements.selectAllRows.checked = filteredRows.length > 0 && selectedCountInFiltered === filteredRows.length;
+
       if (collectedRows.length === 0) {
         elements.dataList.innerHTML = `<div class="empty-list">아직 저장된 데이터가 없습니다. 지도에서 위치를 선택한 뒤 저장해보세요.</div>`;
         return;
       }
+      if (filteredRows.length === 0) {
+        elements.dataList.innerHTML = `<div class="empty-list">검색 결과가 없습니다. 다른 건물명을 입력해보세요.</div>`;
+        return;
+      }
 
-      collectedRows.forEach((row, index) => {
+      filteredRows.forEach(({ row, originalIndex }) => {
         const item = row.data;
         const wrap = document.createElement("div");
         wrap.className = "data-row";
@@ -1438,23 +1477,30 @@
         const rowKey = getRowKey(row);
         const checked = selectedRowIds.has(rowKey) ? "checked" : "";
         const created = row.created_at ? new Date(row.created_at).toLocaleString() : "-";
-        wrap.innerHTML = `
-          <div class="data-row-head">
-            <input type="checkbox" data-row-check="${rowKey}" ${checked} />
-            <button class="mini-btn btn-secondary" type="button" data-row-focus="${rowKey}">지도에서 보기</button>
-            <span class="data-row-title">데이터 #${index + 1}</span>
-            <button class="mini-btn btn-secondary" type="button" data-row-detail="${rowKey}" aria-expanded="false">상세 정보 보기</button>
-            <button class="mini-btn" type="button" data-row-edit="${rowKey}">수정</button>
-          </div>
+        const detailHtml = `
+          <div class="section-title">기본 정보</div>
           <div class="row-meta">
             건물명: ${item.building_name || "-"}<br/>
             좌표: ${item.lat?.toFixed ? item.lat.toFixed(6) : item.lat}, ${item.lng?.toFixed ? item.lng.toFixed(6) : item.lng}<br/>
             층: ${item.floor || "-"}<br/>
-            주차장: ${item.parking_capacity ?? 0}대 / 입구까지 거리: ${item.parking_distance_entrance_m ?? 0}m / 경사로: ${item.ramp_available ? "있음" : "없음"}<br/>
-            자동문: ${item.auto_door_available ? "있음" : "없음"} / 문턱: ${item.threshold_present ? "있음" : "없음"} / 사진: ${(item.imageNames || []).length}장 / 층별 사진 그룹: ${(item.floorPhotoGroups || []).length}개<br/>
+            주차장: ${item.parking_capacity ?? 0}대 / 입구까지 거리: ${item.parking_distance_entrance_m ?? 0}m<br/>
+            경사로: ${item.ramp_available ? "있음" : "없음"} / 자동문: ${item.auto_door_available ? "있음" : "없음"} / 문턱: ${item.threshold_present ? "있음" : "없음"}<br/>
+            휠체어 진입: ${item.wheelchair_access ? "가능" : "불가"} / 장애인 승강기: ${item.elevator_available ? "있음" : "없음"} / 점자 표기: ${item.braille_available ? "있음" : "없음"} / 장애인 화장실: ${item.toilet_available ? "있음" : "없음"}<br/>
+            공통 사진: ${(item.imageNames || []).length}장 / 층별 사진 그룹: ${(item.floorPhotoGroups || []).length}개<br/>
             저장시각: ${created}
           </div>
-          <div class="row-detail" data-row-detail-content="${rowKey}" hidden>${item.description ? escapeHtml(item.description) : "입력된 상세 정보가 없습니다."}</div>
+          <div class="section-title">상세 설명</div>
+          <div class="row-meta">${item.description ? escapeHtml(item.description).replace(/\n/g, "<br/>") : "입력된 상세 정보가 없습니다."}</div>
+        `;
+        wrap.innerHTML = `
+          <div class="data-row-head">
+            <input type="checkbox" data-row-check="${rowKey}" ${checked} />
+            <button class="mini-btn btn-secondary" type="button" data-row-focus="${rowKey}">지도에서 보기</button>
+            <span class="data-row-title">데이터 #${originalIndex + 1} | ${item.building_name || "건물명 없음"}</span>
+            <button class="mini-btn btn-secondary" type="button" data-row-detail="${rowKey}" aria-expanded="false">상세 정보 보기</button>
+            <button class="mini-btn" type="button" data-row-edit="${rowKey}">수정</button>
+          </div>
+          <div class="row-detail" data-row-detail-content="${rowKey}" hidden>${detailHtml}</div>
         `;
         const images = Array.isArray(item.imageFiles) ? item.imageFiles : [];
         const floorGroups = Array.isArray(item.floorPhotoGroups) ? item.floorPhotoGroups : [];
@@ -1462,11 +1508,12 @@
           floorGroups.flatMap((group) => (group.imageFiles || [])).map((file) => `${file.bucket || ""}:${file.path || file.url || file.name || ""}`)
         );
         const ungroupedImages = images.filter((image) => !groupedKeys.has(`${image.bucket || ""}:${image.path || image.url || image.name || ""}`));
+        const detailPanel = wrap.querySelector(`[data-row-detail-content="${rowKey}"]`);
         if (ungroupedImages.length > 0) {
           const title = document.createElement("div");
           title.className = "section-title";
           title.textContent = "공통 사진";
-          wrap.appendChild(title);
+          detailPanel.appendChild(title);
           const strip = document.createElement("div");
           strip.className = "photo-strip";
           ungroupedImages.forEach((image, photoIndex) => {
@@ -1478,7 +1525,7 @@
             thumb.setAttribute("data-photo-url", image.url);
             strip.appendChild(thumb);
           });
-          wrap.appendChild(strip);
+          detailPanel.appendChild(strip);
         }
         floorGroups.forEach((group) => {
           const floorImages = Array.isArray(group.imageFiles) ? group.imageFiles : [];
@@ -1486,7 +1533,7 @@
           const title = document.createElement("div");
           title.className = "section-title";
           title.textContent = `${group.floor || "-"} 사진`;
-          wrap.appendChild(title);
+          detailPanel.appendChild(title);
           const strip = document.createElement("div");
           strip.className = "photo-strip";
           floorImages.forEach((image, photoIndex) => {
@@ -1498,7 +1545,7 @@
             thumb.setAttribute("data-photo-url", image.url);
             strip.appendChild(thumb);
           });
-          wrap.appendChild(strip);
+          detailPanel.appendChild(strip);
         });
         elements.dataList.appendChild(wrap);
       });
@@ -1740,11 +1787,16 @@
       document.getElementById("downloadPhotosZipBtn").addEventListener("click", downloadPhotosZip);
 
       elements.selectAllRows.addEventListener("change", () => {
+        const filteredRows = getFilteredRows();
         if (elements.selectAllRows.checked) {
-          selectedRowIds = new Set(collectedRows.map((row) => getRowKey(row)));
+          filteredRows.forEach(({ row }) => selectedRowIds.add(getRowKey(row)));
         } else {
-          selectedRowIds.clear();
+          filteredRows.forEach(({ row }) => selectedRowIds.delete(getRowKey(row)));
         }
+        renderDataList();
+      });
+      elements.buildingSearchInput.addEventListener("input", (event) => {
+        buildingSearchKeyword = event.target.value || "";
         renderDataList();
       });
 
@@ -1753,7 +1805,10 @@
         if (!checkId) return;
         if (event.target.checked) selectedRowIds.add(checkId);
         else selectedRowIds.delete(checkId);
-        elements.selectAllRows.checked = collectedRows.length > 0 && selectedRowIds.size === collectedRows.length;
+        const filteredRows = getFilteredRows();
+        const filteredRowKeys = filteredRows.map(({ row }) => getRowKey(row));
+        const selectedCountInFiltered = filteredRowKeys.filter((rowKey) => selectedRowIds.has(rowKey)).length;
+        elements.selectAllRows.checked = filteredRows.length > 0 && selectedCountInFiltered === filteredRows.length;
       });
 
       elements.dataList.addEventListener("click", async (event) => {
