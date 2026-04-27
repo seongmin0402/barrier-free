@@ -1389,6 +1389,25 @@
       });
     }
 
+    function recenterOverviewMap() {
+      if (!overviewMap) return;
+      if (savedMarkers.length === 1) {
+        overviewMap.setCenter(savedMarkers[0].getPosition());
+        overviewMap.setZoom(18);
+        return;
+      }
+      if (savedMarkers.length > 1) {
+        const bounds = new naver.maps.LatLngBounds();
+        savedMarkers.forEach((savedMarker) => bounds.extend(savedMarker.getPosition()));
+        overviewMap.fitBounds(bounds, { top: 40, right: 40, bottom: 40, left: 40 });
+        return;
+      }
+      if (selectedLat !== null && selectedLng !== null) {
+        overviewMap.setCenter(new naver.maps.LatLng(selectedLat, selectedLng));
+        overviewMap.setZoom(13);
+      }
+    }
+
     function renderSavedMarkers() {
       if (!overviewMap) {
         return;
@@ -1411,11 +1430,7 @@
       });
 
       elements.markerCount.textContent = String(savedMarkers.length);
-      if (savedMarkers.length > 0) {
-        overviewMap.setCenter(savedMarkers[savedMarkers.length - 1].getPosition());
-      } else if (selectedLat !== null && selectedLng !== null) {
-        overviewMap.setCenter(new naver.maps.LatLng(selectedLat, selectedLng));
-      }
+      recenterOverviewMap();
     }
 
     function refreshMarkerIcons() {
@@ -1653,6 +1668,7 @@
       }
       if (overviewMap) {
         naver.maps.Event.trigger(overviewMap, "resize");
+        recenterOverviewMap();
       }
       refreshMarkerIcons();
     }
