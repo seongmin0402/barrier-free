@@ -630,6 +630,7 @@
         </div>
       </div>
       <div id="dataList" class="form-grid"></div>
+      <div id="pagination" class="inline-row" style="justify-content:center; gap:8px; margin-top:10px;"></div>
       <div class="btn-row" style="margin-top:12px;">
         <button id="deleteSelectedBtn" class="btn-danger" type="button">선택 데이터 삭제</button>
       </div>
@@ -656,6 +657,7 @@
       }
     ];
     const STORAGE_BUCKETS = ["barrier-images", "barrier-free-map-2"];
+    const PAGE_SIZE = 5;
 
     // CSV 컬럼은 현재 한국어 입력 항목 중심으로 구성
     const CSV_COLUMNS = [
@@ -694,6 +696,7 @@
     let pendingFloorPhotoGroups = [];
     let floorPhotoGroupSeq = 0;
     let buildingSearchKeyword = "";
+    let currentPage = 1;
 
     const elements = {
       permissionModal: document.getElementById("permissionModal"),
@@ -710,6 +713,7 @@
       floorPhotoGroups: document.getElementById("floorPhotoGroups"),
       markerCount: document.getElementById("markerCount"),
       dataList: document.getElementById("dataList"),
+      pagination: document.getElementById("pagination"),
       buildingSearchInput: document.getElementById("buildingSearchInput"),
       selectAllRows: document.getElementById("selectAllRows"),
       deleteSelectedBtn: document.getElementById("deleteSelectedBtn"),
@@ -1477,14 +1481,23 @@
 
       if (collectedRows.length === 0) {
         elements.dataList.innerHTML = `<div class="empty-list">아직 저장된 데이터가 없습니다. 지도에서 위치를 선택한 뒤 저장해보세요.</div>`;
+        elements.pagination.innerHTML = "";
         return;
       }
       if (filteredRows.length === 0) {
         elements.dataList.innerHTML = `<div class="empty-list">검색 결과가 없습니다. 다른 건물명을 입력해보세요.</div>`;
+        elements.pagination.innerHTML = "";
         return;
       }
 
-      filteredRows.forEach(({ row, originalIndex }) => {
+      const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+      if (currentPage > totalPages) {
+        currentPage = totalPages;
+      }
+      const pageStart = (currentPage - 1) * PAGE_SIZE;
+      const pageRows = filteredRows.slice(pageStart, pageStart + PAGE_SIZE);
+
+      pageRows.forEach(({ row, originalIndex }) => {
         const item = row.data;
         const wrap = document.createElement("div");
         wrap.className = "data-row";
@@ -1570,6 +1583,28 @@
         });
         elements.dataList.appendChild(wrap);
       });
+      renderPagination(filteredRows.length, totalPages);
+    }
+
+    function renderPagination(totalItems, totalPages) {
+      if (!elements.pagination) return;
+      if (totalItems === 0) {
+        elements.pagination.innerHTML = "";
+        return;
+      }
+      let pageButtons = "";
+      for (let page = 1; page <= totalPages; page += 1) {
+        pageButtons += `
+          <button type="button" class="mini-btn ${page === currentPage ? "btn-secondary" : ""}" data-page="${page}">
+            ${page}
+          </button>
+        `;
+      }
+      elements.pagination.innerHTML = `
+        <button type="button" class="mini-btn" data-page-move="prev" ${currentPage <= 1 ? "disabled" : ""}>이전</button>
+        ${pageButtons}
+        <button type="button" class="mini-btn" data-page-move="next" ${currentPage >= totalPages ? "disabled" : ""}>다음</button>
+      `;
     }
 
     function setMapType(type) {
@@ -1819,6 +1854,21 @@
       });
       elements.buildingSearchInput.addEventListener("input", (event) => {
         buildingSearchKeyword = event.target.value || "";
+        currentPage = 1;
+        renderDataList();
+      });
+      elements.pagination.addEventListener("click", (event) => {
+        const page = event.target.getAttribute("data-page");
+        if (page) {
+          currentPage = Number(page);
+          renderDataList();
+          return;
+        }
+        const move = event.target.getAttribute("data-page-move");
+        if (!move) return;
+        const totalPages = Math.max(1, Math.ceil(getFilteredRows().length / PAGE_SIZE));
+        if (move === "prev" && currentPage > 1) currentPage -= 1;
+        if (move === "next" && currentPage < totalPages) currentPage += 1;
         renderDataList();
       });
 
