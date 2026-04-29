@@ -407,6 +407,37 @@
       min-width: 88px;
       padding: 11px 14px;
     }
+    .pagination-row {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      flex-wrap: nowrap;
+    }
+    .page-btn {
+      width: 40px;
+      min-width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: #111827;
+      font-weight: 700;
+      padding: 0;
+      line-height: 1;
+    }
+    .page-btn.active {
+      background: #e5e7eb;
+      border-color: #d1d5db;
+    }
+    .page-btn.nav {
+      font-size: 1.15rem;
+    }
+    .page-btn.hidden-nav {
+      visibility: hidden;
+      pointer-events: none;
+    }
     .floor-photo-groups {
       display: grid;
       gap: 10px;
@@ -630,7 +661,7 @@
         </div>
       </div>
       <div id="dataList" class="form-grid"></div>
-      <div id="pagination" class="inline-row" style="justify-content:center; gap:8px; margin-top:10px;"></div>
+      <div id="pagination" class="pagination-row"></div>
       <div class="btn-row" style="margin-top:12px;">
         <button id="deleteSelectedBtn" class="btn-danger" type="button">선택 데이터 삭제</button>
       </div>
@@ -1592,18 +1623,20 @@
         elements.pagination.innerHTML = "";
         return;
       }
+      const pageBlockStart = Math.floor((currentPage - 1) / 10) * 10 + 1;
+      const pageBlockEnd = Math.min(pageBlockStart + 9, totalPages);
       let pageButtons = "";
-      for (let page = 1; page <= totalPages; page += 1) {
+      for (let page = pageBlockStart; page <= pageBlockEnd; page += 1) {
         pageButtons += `
-          <button type="button" class="mini-btn ${page === currentPage ? "btn-secondary" : ""}" data-page="${page}">
+          <button type="button" class="page-btn ${page === currentPage ? "active" : ""}" data-page="${page}" aria-label="${page}페이지">
             ${page}
           </button>
         `;
       }
       elements.pagination.innerHTML = `
-        <button type="button" class="mini-btn" data-page-move="prev" ${currentPage <= 1 ? "disabled" : ""}>이전</button>
+        <button type="button" class="page-btn nav ${currentPage <= 1 ? "hidden-nav" : ""}" data-page-move="prev" aria-label="이전 페이지">&#8249;</button>
         ${pageButtons}
-        <button type="button" class="mini-btn" data-page-move="next" ${currentPage >= totalPages ? "disabled" : ""}>다음</button>
+        <button type="button" class="page-btn nav ${currentPage >= totalPages ? "hidden-nav" : ""}" data-page-move="next" aria-label="다음 페이지">&#8250;</button>
       `;
     }
 
@@ -1858,13 +1891,15 @@
         renderDataList();
       });
       elements.pagination.addEventListener("click", (event) => {
-        const page = event.target.getAttribute("data-page");
+        const button = event.target.closest("button");
+        if (!button) return;
+        const page = button.getAttribute("data-page");
         if (page) {
           currentPage = Number(page);
           renderDataList();
           return;
         }
-        const move = event.target.getAttribute("data-page-move");
+        const move = button.getAttribute("data-page-move");
         if (!move) return;
         const totalPages = Math.max(1, Math.ceil(getFilteredRows().length / PAGE_SIZE));
         if (move === "prev" && currentPage > 1) currentPage -= 1;
