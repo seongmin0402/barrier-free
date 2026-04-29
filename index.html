@@ -728,6 +728,7 @@
     let floorPhotoGroupSeq = 0;
     let buildingSearchKeyword = "";
     let currentPage = 1;
+    let isSaving = false;
 
     const elements = {
       permissionModal: document.getElementById("permissionModal"),
@@ -1017,6 +1018,18 @@
     function setFormModeEditing(isEditing) {
       const saveBtn = document.getElementById("saveBtn");
       saveBtn.textContent = isEditing ? "수정 저장" : "저장";
+    }
+
+    function setSavingState(saving) {
+      isSaving = saving;
+      const saveBtn = document.getElementById("saveBtn");
+      if (!saveBtn) return;
+      saveBtn.disabled = saving;
+      if (saving) {
+        saveBtn.textContent = editingRowKey ? "수정 저장 중..." : "저장 중...";
+        return;
+      }
+      setFormModeEditing(!!editingRowKey);
     }
 
     function fillFormFromData(data) {
@@ -1832,6 +1845,11 @@
 
       elements.dataForm.addEventListener("submit", async (event) => {
         event.preventDefault();
+        if (isSaving) {
+          return;
+        }
+        setSavingState(true);
+        showMessage(editingRowKey ? "수정 중입니다..." : "저장 중입니다...");
         try {
           const payload = createDataObject();
           const files = [...pendingUploadFiles];
@@ -1850,7 +1868,7 @@
             renderSavedMarkers();
             renderDataList();
             resetFormKeepLocation();
-            showMessage("데이터를 수정했습니다.");
+            showMessage("수정 완료");
             return;
           }
 
@@ -1867,9 +1885,11 @@
             await fetchSharedData();
           }
           resetFormKeepLocation();
-          showMessage("데이터를 공유 저장소에 저장했습니다.");
+          showMessage("저장 완료");
         } catch (error) {
           showMessage(error.message || "저장 중 오류가 발생했습니다.", true);
+        } finally {
+          setSavingState(false);
         }
       });
 
