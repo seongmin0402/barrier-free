@@ -1368,7 +1368,7 @@
         showMessage("다운로드할 데이터가 없습니다.", true);
         return;
       }
-      const csv = buildCsvText(rows);
+      const csv = `\uFEFF${buildCsvText(rows)}`;
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
